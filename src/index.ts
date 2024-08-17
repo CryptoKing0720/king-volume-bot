@@ -9,3 +9,4 @@ const conn: Connection = new Connection(clusterApiUrl("testnet"), "confirmed");
 global.setWeb3(conn);
 
 bot.init();
+bot.sessionInit();
