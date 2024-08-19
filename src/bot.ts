@@ -60,7 +60,7 @@ export const sessionInit = async () => {
   await database.init();
 };
 
-export const stateMap_init = (chatId: string) => {
+export const initStateMap = (chatId: string) => {
   let item = {
     focus: { state: StateCode.IDLE, data: { sessionId: chatId } },
     message: new Map(),
@@ -71,7 +71,7 @@ export const stateMap_init = (chatId: string) => {
   return item;
 };
 
-export const stateMap_getFocus = (chatId: string) => {
+export const getStateMapFocus = (chatId: string) => {
   const item = stateMap.get(chatId);
   if (item) {
     let focusItem = item.focus;
@@ -81,14 +81,14 @@ export const stateMap_getFocus = (chatId: string) => {
   return null;
 };
 
-export const stateMap_setFocus = (
+export const setStateMapFocus = (
   chatId: string,
   state: any,
   data: any = {}
 ) => {
   let item = stateMap.get(chatId);
   if (!item) {
-    item = stateMap_init(chatId);
+    item = initStateMap(chatId);
   }
 
   if (!data) {
@@ -101,4 +101,80 @@ export const stateMap_setFocus = (
   } else {
     item.focus = { state, data };
   }
+};
+
+export const getStateMap = (chatId: string) => {
+  stateMap.get(chatId);
+};
+
+export const openMessage = async (
+  chatId: string,
+  bannerId: string,
+  messageType: number,
+  menuTitle: string
+) => {
+  await removeMenu(chatId, messageType);
+
+  try {
+    let msg: TelegramBot.Message;
+
+    if (bannerId) {
+      msg = await bot.sendPhoto(chatId, bannerId, {
+        caption: menuTitle,
+        parse_mode: "HTML",
+      });
+    } else {
+      msg = await bot.sendMessage(chatId, menuTitle, {
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      });
+    }
+
+    setStateMapMessageId(chatId, messageType, msg.message_id);
+    return { messageId: msg.message_id, chatId: msg.chat.id };
+  } catch (error) {
+    global.errorLog("openMenu", error);
+    return null;
+  }
+};
+
+export const removeMenu = async (chatId: string, messageType: number) => {
+  const msgId = getStateMapMessageId(chatId, messageType);
+  if (msgId) {
+    try {
+      await bot.deleteMessage(chatId, msgId);
+    } catch (error) {}
+  }
+};
+
+export const setStateMapMessageId = (
+  chatId: string,
+  messageType: number,
+  messageId: number
+) => {
+  let item = stateMap.get(chatId);
+  if (!item) {
+    item = initStateMap(chatId);
+  }
+
+  item.message.set(`t${messageType}`, messageId);
+};
+
+export const getStateMapMessageId = (chatId: string, messageType: number) => {
+  const messageItem = getStateMapMessage(chatId);
+  if (messageItem) {
+    return messageItem.get(`t${messageType}`);
+  }
+
+  return null;
+};
+
+export const getStateMapMessage = (chatId: string) => {
+  const item = stateMap.get(chatId);
+  if (item) {
+    let messageItem = item.message;
+    return messageItem;
+  }
+
+  return null;
 };

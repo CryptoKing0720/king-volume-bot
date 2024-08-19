@@ -1,6 +1,8 @@
-import * as bot from "../bot";
+import assert from "assert";
 
+import * as bot from "../bot";
 import { StateCode } from "../utils/constant";
+import * as utils from "../utils/utils";
 
 export const procMessage = async (message: any, database: any) => {
   let chatId = message.chat.id.toString();
@@ -27,8 +29,25 @@ const processSettings = async (message: any, database: any) => {
     return;
   }
 
-  let stateMode = bot.stateMap_getFocus(sessionId);
-  if (!stateMode) {
-    bot.stateMap_setFocus(sessionId, StateCode.IDLE);
+  let stateNode = bot.getStateMapFocus(sessionId);
+  if (!stateNode) {
+    bot.setStateMapFocus(sessionId, StateCode.IDLE, { sessionId: sessionId });
+    stateNode = bot.getStateMap(sessionId);
+
+    assert(stateNode);
+  }
+
+  const stateData = stateNode.data;
+  if (stateNode.state === StateCode.WAIT_WITHDRAW_WALLET_ADDRESS) {
+    const addr = message.text.trim();
+    if (!addr || addr === "" || !utils.isValidAddress(addr)) {
+      bot.openMessage(
+        sessionId,
+        "",
+        0,
+        "⛔ Sorry, the token address you entered is invalid, Please try again"
+      );
+      return;
+    }
   }
 };

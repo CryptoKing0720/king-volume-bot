@@ -10,3 +10,23 @@ global.setWeb3(conn);
 
 bot.init();
 bot.sessionInit();
+
+process.on("uncaughtException", async (error) => {
+  console.error("Uncaught Exception:", error);
+
+  try {
+    await bot.bot.stopPolling();
+    bot.init();
+  } catch (e) {
+    console.error("Error during recovery:", e);
+  }
+});
+
+process.on("SIGSEGV", async (error) => {
+  try {
+    await bot.bot.stopPolling();
+    bot.init();
+  } catch (e) {
+    console.error("Error during recovery:", e);
+  }
+});
