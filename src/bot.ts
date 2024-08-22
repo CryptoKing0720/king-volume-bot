@@ -5,6 +5,8 @@ dotenv.config();
 
 import * as database from "./db";
 import { StateCode } from "./utils/constant";
+import { procMessage } from "./core/telegram";
+import { errorLog } from "./global";
 
 export let busy = true;
 export let bot: TelegramBot;
@@ -22,12 +24,8 @@ export const init = async () => {
     const messageTxt = message.text;
     const messageType = message?.chat?.type;
 
-    if (messageTxt == "/start") {
-      bot.sendMessage(chatId, "Welcome to the bot!");
-    }
-
     if (messageType == "private") {
-      console.log(message);
+      procMessage(message, database);
     } else if (messageType == "group" || messageType == "supergroup") {
     } else if (messageType == "channel") {
     }
@@ -54,7 +52,26 @@ export const executeCommand = async (
   _messageId: number | undefined,
   _callbackQueryId: string | undefined,
   option: any
-) => {};
+) => {
+  const cmd = option.c;
+  const id = option.k;
+
+  console.log(`executeCommand cmd = ${cmd} id = ${id}`);
+
+  const session = sessions.get(chatId);
+  if (!session) {
+    return;
+  }
+
+  let messageId = Number(_messageId ?? 0);
+  let callbackQueryId = _callbackQueryId ?? "";
+
+  const sessionId: string = chatId;
+  const stateData: any = { sessionId, messageId, callbackQueryId, cmd };
+
+  stateData.message_id = messageId;
+  stateData.callback_query_id = callbackQueryId;
+};
 
 export const sessionInit = async () => {
   await database.init();
@@ -133,7 +150,7 @@ export const openMessage = async (
     setStateMapMessageId(chatId, messageType, msg.message_id);
     return { messageId: msg.message_id, chatId: msg.chat.id };
   } catch (error) {
-    global.errorLog("openMenu", error);
+    errorLog("openMenu", error);
     return null;
   }
 };

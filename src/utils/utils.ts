@@ -1,4 +1,4 @@
-import { PublicKey } from "@solana/web3.js/lib";
+import { PublicKey } from "@solana/web3.js";
 
 export const isValidAddress = (address: string) => {
   try {

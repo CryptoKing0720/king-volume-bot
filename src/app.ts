@@ -4,6 +4,8 @@ import passport from "passport";
 import dotenv from "dotenv";
 dotenv.config();
 
+import routes from "./routes";
+
 export const run = async (bot: any): Promise<void> => {
   const app: Express = express();
 
@@ -22,7 +24,7 @@ export const run = async (bot: any): Promise<void> => {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(passport.initialize());
-  app.use("/api", routeAdmins());
+  app.use("/api", routes());
 
   const port = process.env.PORT || 3000;
 
