@@ -75,6 +75,13 @@ export const executeCommand = async (
 
 export const sessionInit = async () => {
   await database.init();
+  const users: any = await database.selectUsers();
+  let loggedin = 0;
+
+  for (const user of users) {
+    let session = JSON.parse(JSON.stringify(user));
+    session = session;
+  }
 };
 
 export const initStateMap = (chatId: string) => {

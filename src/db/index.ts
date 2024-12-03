@@ -98,6 +98,9 @@ export const init = async () => {
 
 export const selectUsers = async (params: any = {}) => {
   try {
-    await User.find(params);
-  } catch (error) {}
+    let users = await User.find(params);
+    return users;
+  } catch (error) {
+    console.error(`Could not select users: ${error}`);
+  }
 };
