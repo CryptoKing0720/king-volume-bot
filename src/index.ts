@@ -1,35 +1,31 @@
-import { Connection, clusterApiUrl } from "@solana/web3.js";
+import dotenv from 'dotenv';
 
-import * as bot from "./bot";
-import * as global from "./global";
-import { run } from "./app";
+import * as bot from './bot';
 
-const conn: Connection = new Connection(clusterApiUrl("testnet"), "confirmed");
-// const conn: Connection = new Connection(process.env.MAINNET_RPC, "processed");
+dotenv.config()
 
-global.setWeb3(conn);
+const main = async () => {
+	await bot.init()
+	await bot.sessionInit()
+}
 
-bot.init();
-bot.sessionInit();
+main()
 
-process.on("uncaughtException", async (error) => {
-  console.error("Uncaught Exception:", error);
+process.on("SIGSEGV", async (e) => {
+	console.log(e);
 
-  try {
-    await bot.bot.stopPolling();
-    bot.init();
-  } catch (e) {
-    console.error("Error during recovery:", e);
-  }
-});
+	await bot.bot.stopPolling()
+	await bot.bot.closeWebHook()
+	await bot.bot.deleteWebHook()
+	await bot.init()
+	await bot.sessionInit()
+})
 
-process.on("SIGSEGV", async (error) => {
-  try {
-    await bot.bot.stopPolling();
-    bot.init();
-  } catch (e) {
-    console.error("Error during recovery:", e);
-  }
-});
+process.on("uncaughtException", async (e) => {
+	console.log(e);
+	await bot.bot.stopPolling()
+	await bot.bot.closeWebHook()
+	await bot.bot.deleteWebHook()
+	await bot.init()
+})
 
-run(bot);
