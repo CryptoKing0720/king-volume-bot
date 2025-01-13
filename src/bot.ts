@@ -1,13 +1,13 @@
-import dotenv from "dotenv";
 import TelegramBot from "node-telegram-bot-api";
-
-import * as botLogic from "./bot_logic";
-import * as privateBot from "./bot_private";
-import * as database from "./db";
-import * as afx from "./global";
-import * as utils from "./utils";
+import dotenv from "dotenv";
 
 dotenv.config();
+
+import * as botLogic from "./bot_logic";
+import * as botPrivate from "./bot_private";
+import * as database from "./db";
+import * as global from "./global";
+import * as utils from "./utils";
 
 export const COMMAND_START = "start";
 
@@ -38,17 +38,58 @@ export enum StateCode {
 
 export let bot: TelegramBot;
 export let myInfo: TelegramBot.User;
+export let busy: boolean = false;
+
 export const sessions = new Map();
 export const stateMap = new Map();
 
-export const stateMap_setFocus = (
+const jsonUrlButtonItem = (text: string, url: string) => {
+  return {
+    text: text,
+    url: url,
+  };
+};
+
+const jsonWebappButtonItem = (text: string, url: any) => {
+  return {
+    text: text,
+    web_app: {
+      url,
+    },
+  };
+};
+
+export const initStateMap = (chatid: string) => {
+  let item = {
+    focus: { state: StateCode.IDLE, data: { sessionId: chatid } },
+    message: new Map(),
+  };
+
+  stateMap.set(chatid, item);
+
+  return item;
+};
+
+export const getStateMap = (chatid: string) => {
+  return stateMap.get(chatid);
+};
+
+export const removeStateMap = (chatid: string) => {
+  stateMap.delete(chatid);
+};
+
+export const clearStateMap = () => {
+  stateMap.clear();
+};
+
+export const setStateMapFocus = (
   chatid: string,
   state: any,
   data: any = {}
 ) => {
   let item = stateMap.get(chatid);
   if (!item) {
-    item = stateMap_init(chatid);
+    item = initStateMap(chatid);
   }
 
   if (!data) {
@@ -63,7 +104,7 @@ export const stateMap_setFocus = (
   }
 };
 
-export const stateMap_getFocus = (chatid: string) => {
+export const getStateMapFocus = (chatid: string) => {
   const item = stateMap.get(chatid);
   if (item) {
     let focusItem = item.focus;
@@ -73,31 +114,7 @@ export const stateMap_getFocus = (chatid: string) => {
   return null;
 };
 
-export const stateMap_init = (chatid: string) => {
-  let item = {
-    focus: { state: StateCode.IDLE, data: { sessionId: chatid } },
-    message: new Map(),
-  };
-
-  stateMap.set(chatid, item);
-
-  return item;
-};
-
-export const stateMap_setMessage_Id = (
-  chatid: string,
-  messageType: number,
-  messageId: number
-) => {
-  let item = stateMap.get(chatid);
-  if (!item) {
-    item = stateMap_init(chatid);
-  }
-
-  item.message.set(`t${messageType}`, messageId);
-};
-
-export const stateMap_getMessage = (chatid: string) => {
+export const getStateMapMessage = (chatid: string) => {
   const item = stateMap.get(chatid);
   if (item) {
     let messageItem = item.message;
@@ -107,8 +124,21 @@ export const stateMap_getMessage = (chatid: string) => {
   return null;
 };
 
-export const stateMap_getMessage_Id = (chatid: string, messageType: number) => {
-  const messageItem = stateMap_getMessage(chatid);
+export const setStateMapMessageId = (
+  chatid: string,
+  messageType: number,
+  messageId: number
+) => {
+  let item = stateMap.get(chatid);
+  if (!item) {
+    item = initStateMap(chatid);
+  }
+
+  item.message.set(`t${messageType}`, messageId);
+};
+
+export const getStateMapMessageId = (chatid: string, messageType: number) => {
+  const messageItem = getStateMapMessage(chatid);
   if (messageItem) {
     return messageItem.get(`t${messageType}`);
   }
@@ -116,43 +146,97 @@ export const stateMap_getMessage_Id = (chatid: string, messageType: number) => {
   return null;
 };
 
-export const stateMap_get = (chatid: string) => {
-  return stateMap.get(chatid);
-};
-
-export const stateMap_remove = (chatid: string) => {
-  stateMap.delete(chatid);
-};
-
-export const stateMap_clear = () => {
-  stateMap.clear();
-};
-
-export const json_buttonItem = (key: string, cmd: number, text: string) => {
+export const jsonButtonItem = (key: string, cmd: number, text: string) => {
   return {
     text: text,
     callback_data: JSON.stringify({ k: key, c: cmd }),
   };
 };
 
-const json_url_buttonItem = (text: string, url: string) => {
-  return {
-    text: text,
-    url: url,
-  };
+export const getMenuTitle = (sessionId: string, subTitle: string) => {
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return "ERROR " + sessionId;
+  }
+
+  let result =
+    session.type === "private"
+      ? `@${session.username}'s configuration setup`
+      : `@${session.username} group's configuration setup`;
+
+  if (subTitle && subTitle !== "") {
+    //subTitle = subTitle.replace('%username%', `@${session.username}`)
+    result += `\n${subTitle}`;
+  }
+
+  return result;
 };
 
-const json_webapp_buttonItem = (text: string, url: any) => {
-  return {
-    text: text,
-    web_app: {
-      url,
-    },
-  };
+export const pinMessage = (chatid: string, messageId: number) => {
+  try {
+    bot.pinChatMessage(chatid, messageId);
+  } catch (error) {
+    console.error(error);
+  }
+};
+
+export const checkWhitelist = (chatid: string) => {
+  return true;
+};
+
+export const init = async () => {
+  busy = true;
+  bot = new TelegramBot(process.env.BOT_TOKEN as string, {
+    polling: true,
+  });
+
+  bot.getMe().then((info: TelegramBot.User) => {
+    myInfo = info;
+  });
+
+  bot.on("message", async (message: any) => {
+    const msgType = message?.chat?.type;
+    if (msgType === "private") {
+      await botPrivate.procMessage(message, database);
+    }
+  });
+
+  bot.on("callback_query", async (callbackQuery: TelegramBot.CallbackQuery) => {
+    const message = callbackQuery.message;
+
+    if (!message) {
+      return;
+    }
+
+    await executeCommand(
+      message.chat.id.toString(),
+      message.message_id,
+      callbackQuery.id,
+      JSON.parse(callbackQuery.data as string)
+    );
+  });
+
+  busy = false;
+};
+
+export const sessionInit = async () => {
+  busy = true;
+  await database.init();
+  const users: any = await database.selectUsers();
+
+  let loggedin = 0;
+  for (const user of users) {
+    let session = JSON.parse(JSON.stringify(user));
+    session = utils.objectDeepCopy(session, ["_id", "__v"]);
+    sessions.set(session.chatid, session);
+  }
+
+  console.log(`${users.length} users, ${loggedin} logged in`);
+  busy = false;
 };
 
 export const removeMenu = async (chatId: string, messageType: number) => {
-  const msgId = stateMap_getMessage_Id(chatId, messageType);
+  const msgId = getStateMapMessageId(chatId, messageType);
 
   if (msgId) {
     try {
@@ -184,10 +268,10 @@ export const openMenu = async (
         disable_web_page_preview: true,
       });
 
-      stateMap_setMessage_Id(chatId, messageType, msg.message_id);
+      setStateMapMessageId(chatId, messageType, msg.message_id);
       resolve({ messageId: msg.message_id, chatid: msg.chat.id });
     } catch (error) {
-      afx.errorLog("openMenu", error);
+      global.errorLog("openMenu", error);
       resolve(null);
     }
   });
@@ -217,21 +301,21 @@ export const openMessage = async (
         });
       }
 
-      stateMap_setMessage_Id(chatId, messageType, msg.message_id);
+      setStateMapMessageId(chatId, messageType, msg.message_id);
       resolve({ messageId: msg.message_id, chatid: msg.chat.id });
     } catch (error) {
-      afx.errorLog("openMenu", error);
+      global.errorLog("openMenu", error);
       resolve(null);
     }
   });
 };
 
-export async function switchMenu(
+export const switchMenu = async (
   chatId: string,
   messageId: number,
   title: string,
   json_buttons: any
-) {
+) => {
   const keyboard = {
     inline_keyboard: json_buttons,
     resize_keyboard: true,
@@ -248,9 +332,9 @@ export async function switchMenu(
       parse_mode: "HTML",
     });
   } catch (error) {
-    afx.errorLog("[switchMenuWithTitle]", error);
+    global.errorLog("[switchMenuWithTitle]", error);
   }
-}
+};
 
 export const replaceMenu = async (
   chatId: string,
@@ -270,7 +354,7 @@ export const replaceMenu = async (
     try {
       await bot.deleteMessage(chatId, messageId);
     } catch (error) {
-      //afx.errorLog('deleteMessage', error)
+      //global.errorLog('deleteMessage', error)
     }
 
     await removeMenu(chatId, messageType);
@@ -282,62 +366,13 @@ export const replaceMenu = async (
         disable_web_page_preview: true,
       });
 
-      stateMap_setMessage_Id(chatId, messageType, msg.message_id);
+      setStateMapMessageId(chatId, messageType, msg.message_id);
       resolve({ messageId: msg.message_id, chatid: msg.chat.id });
     } catch (error) {
-      afx.errorLog("openMenu", error);
+      global.errorLog("openMenu", error);
       resolve(null);
     }
   });
-};
-
-export const get_menuTitle = (sessionId: string, subTitle: string) => {
-  const session = sessions.get(sessionId);
-  if (!session) {
-    return "ERROR " + sessionId;
-  }
-
-  let result =
-    session.type === "private"
-      ? `@${session.username}'s configuration setup`
-      : `@${session.username} group's configuration setup`;
-
-  if (subTitle && subTitle !== "") {
-    //subTitle = subTitle.replace('%username%', `@${session.username}`)
-    result += `\n${subTitle}`;
-  }
-
-  return result;
-};
-
-export const removeMessage = async (sessionId: string, messageId: number) => {
-  if (sessionId && messageId) {
-    try {
-      await bot.deleteMessage(sessionId, messageId);
-    } catch (error) {
-      //console.error(error)
-    }
-  }
-};
-
-export const sendReplyMessage = async (chatid: string, message: string) => {
-  try {
-    let data: any = {
-      parse_mode: "HTML",
-      disable_forward: true,
-      disable_web_page_preview: true,
-      reply_markup: { force_reply: true },
-    };
-
-    const msg = await bot.sendMessage(chatid, message, data);
-    return {
-      messageId: msg.message_id,
-      chatid: msg.chat ? msg.chat.id : null,
-    };
-  } catch (error) {
-    afx.errorLog("sendReplyMessage", error);
-    return null;
-  }
 };
 
 export const sendMessage = async (
@@ -377,13 +412,43 @@ export const sendMessage = async (
     }
 
     console.log(error?.response?.body);
-    afx.errorLog("sendMessage", error);
+    global.errorLog("sendMessage", error);
+    return null;
+  }
+};
+
+export const removeMessage = async (sessionId: string, messageId: number) => {
+  if (sessionId && messageId) {
+    try {
+      await bot.deleteMessage(sessionId, messageId);
+    } catch (error) {
+      //console.error(error)
+    }
+  }
+};
+
+export const sendReplyMessage = async (chatid: string, message: string) => {
+  try {
+    let data: any = {
+      parse_mode: "HTML",
+      disable_forward: true,
+      disable_web_page_preview: true,
+      reply_markup: { force_reply: true },
+    };
+
+    const msg = await bot.sendMessage(chatid, message, data);
+    return {
+      messageId: msg.message_id,
+      chatid: msg.chat ? msg.chat.id : null,
+    };
+  } catch (error) {
+    global.errorLog("sendReplyMessage", error);
     return null;
   }
 };
 
 export const sendInfoMessage = async (chatid: string, message: string) => {
-  let json = [[json_buttonItem(chatid, OptionCode.CLOSE, "✖️ Close")]];
+  let json = [[jsonButtonItem(chatid, OptionCode.CLOSE, "✖️ Close")]];
 
   return sendOptionMessage(chatid, message, json);
 };
@@ -410,22 +475,10 @@ export const sendOptionMessage = async (
       chatid: msg.chat ? msg.chat.id : null,
     };
   } catch (error) {
-    afx.errorLog("sendOptionMessage", error);
+    global.errorLog("sendOptionMessage", error);
 
     return null;
   }
-};
-
-export const pinMessage = (chatid: string, messageId: number) => {
-  try {
-    bot.pinChatMessage(chatid, messageId);
-  } catch (error) {
-    console.error(error);
-  }
-};
-
-export const checkWhitelist = (chatid: string) => {
-  return true;
 };
 
 export const getMainMenuMessage = async (
@@ -497,7 +550,7 @@ export const getMainMenuMessage = async (
   return MESSAGE;
 };
 
-export const json_main = async (sessionId: string) => {
+export const jsonMain = async (sessionId: string) => {
   const session = sessions.get(sessionId);
   if (!session) {
     return "";
@@ -510,43 +563,43 @@ export const json_main = async (sessionId: string) => {
   const itemData = `${sessionId}`;
   const json = [
     [
-      json_buttonItem(
+      jsonButtonItem(
         itemData,
         OptionCode.TITLE,
         `🎖️ ${process.env.BOT_TITLE} 🎖️`
       ),
     ],
     [
-      json_buttonItem(
+      jsonButtonItem(
         itemData,
         token.botId ? OptionCode.MAIN_STOP : OptionCode.MAIN_START,
         token.botId ? "🔴 Stop" : "🚀 Start"
       ),
     ],
     // [
-    //     json_buttonItem(itemData, OptionCode.MAIN_DISPERSE, "🔀 Disperse"),
-    //     json_buttonItem(itemData, OptionCode.MAIN_COLLECT, "💰 Collect"),
+    //     jsonButtonItem(itemData, OptionCode.MAIN_DISPERSE, "🔀 Disperse"),
+    //     jsonButtonItem(itemData, OptionCode.MAIN_COLLECT, "💰 Collect"),
     // ],
     [
-      json_buttonItem(
+      jsonButtonItem(
         itemData,
         OptionCode.MAIN_TARGET_VOLUME,
         "🎚️ Target Volume"
       ),
-      json_buttonItem(itemData, OptionCode.MAIN_DELAY, "⏳ Delay Time"),
-      json_buttonItem(itemData, OptionCode.MAIN_STEP_AMOUNT, "🕹 SOL Amount"),
+      jsonButtonItem(itemData, OptionCode.MAIN_DELAY, "⏳ Delay Time"),
+      jsonButtonItem(itemData, OptionCode.MAIN_STEP_AMOUNT, "🕹 SOL Amount"),
     ],
     [
-      json_buttonItem(itemData, OptionCode.MAIN_WITHDRAW, "📤 Withdraw"),
-      json_buttonItem(itemData, OptionCode.MAIN_REFRESH, "♻️ Refresh"),
+      jsonButtonItem(itemData, OptionCode.MAIN_WITHDRAW, "📤 Withdraw"),
+      jsonButtonItem(itemData, OptionCode.MAIN_REFRESH, "♻️ Refresh"),
     ],
-    [json_buttonItem(itemData, OptionCode.CLOSE, "❌ Close")],
+    [jsonButtonItem(itemData, OptionCode.CLOSE, "❌ Close")],
   ];
 
   return { title: "", options: json };
 };
 
-export const json_confirm = async (
+export const jsonConfirm = async (
   sessionId: string,
   msg: string,
   btnCaption: string,
@@ -562,8 +615,8 @@ export const json_confirm = async (
 
   let json = [
     [
-      json_buttonItem(sessionId, OptionCode.CLOSE, "Close"),
-      json_buttonItem(itemData, btnId, btnCaption),
+      jsonButtonItem(sessionId, OptionCode.CLOSE, "Close"),
+      jsonButtonItem(itemData, btnId, btnCaption),
     ],
   ];
   return { title: title, options: json };
@@ -576,7 +629,7 @@ export const openConfirmMenu = async (
   btnId: number,
   itemData: string = ""
 ) => {
-  const menu: any = await json_confirm(
+  const menu: any = await jsonConfirm(
     sessionId,
     msg,
     btnCaption,
@@ -634,58 +687,6 @@ export const setDefaultSettings = async (session: any) => {
   session.depositWallet = depositWallet?.secretKey;
 };
 
-export let busy: boolean = false;
-export async function init() {
-  busy = true;
-  bot = new TelegramBot(process.env.BOT_TOKEN as string, {
-    polling: true,
-  });
-
-  bot.getMe().then((info: TelegramBot.User) => {
-    myInfo = info;
-  });
-
-  bot.on("message", async (message: any) => {
-    const msgType = message?.chat?.type;
-    if (msgType === "private") {
-      await privateBot.procMessage(message, database);
-    }
-  });
-
-  bot.on("callback_query", async (callbackQuery: TelegramBot.CallbackQuery) => {
-    const message = callbackQuery.message;
-
-    if (!message) {
-      return;
-    }
-
-    await executeCommand(
-      message.chat.id.toString(),
-      message.message_id,
-      callbackQuery.id,
-      JSON.parse(callbackQuery.data as string)
-    );
-  });
-
-  busy = false;
-}
-
-export const sessionInit = async () => {
-  busy = true;
-  await database.init();
-  const users: any = await database.selectUsers();
-
-  let loggedin = 0;
-  for (const user of users) {
-    let session = JSON.parse(JSON.stringify(user));
-    session = utils.objectDeepCopy(session, ["_id", "__v"]);
-    sessions.set(session.chatid, session);
-  }
-
-  console.log(`${users.length} users, ${loggedin} logged in`);
-  busy = false;
-};
-
 export const reloadCommand = async (
   chatid: string,
   messageId: number,
@@ -710,7 +711,7 @@ export const executeCommand = async (
     return;
   }
 
-  //stateMap_clear();
+  //clearStateMap();
 
   let messageId = Number(_messageId ?? 0);
   let callbackQueryId = _callbackQueryId ?? "";
@@ -724,12 +725,12 @@ export const executeCommand = async (
   try {
     if (cmd === OptionCode.MAIN_REFRESH) {
       // await removeMenu(chatid, messageId)
-      const menu: any = await json_main(sessionId);
+      const menu: any = await jsonMain(sessionId);
       let title: string = await getMainMenuMessage(sessionId);
 
       switchMenu(chatid, messageId, title, menu.options);
     } else if (cmd === OptionCode.MAIN_MENU) {
-      const menu: any = await json_main(sessionId);
+      const menu: any = await jsonMain(sessionId);
       let title: string = await getMainMenuMessage(sessionId);
 
       await openMenu(chatid, cmd, title, menu.options);
@@ -739,28 +740,28 @@ export const executeCommand = async (
         `📨 Reply to this message with volume amount bot has to achieve. Ex: 1 is 1M`
       );
       stateData.menu_id = messageId;
-      stateMap_setFocus(chatid, StateCode.WAIT_SET_TARGET_VOLUME, stateData);
+      setStateMapFocus(chatid, StateCode.WAIT_SET_TARGET_VOLUME, stateData);
     } else if (cmd === OptionCode.MAIN_DELAY) {
       await sendReplyMessage(
         chatid,
         `📨 Reply to this message with delay time on bot working. Ex: 10 is 10s`
       );
       stateData.menu_id = messageId;
-      stateMap_setFocus(chatid, StateCode.WAIT_SET_DELAY, stateData);
+      setStateMapFocus(chatid, StateCode.WAIT_SET_DELAY, stateData);
     } else if (cmd === OptionCode.MAIN_STEP_AMOUNT) {
       await sendReplyMessage(
         chatid,
         `📨 Reply to this message with sol amount. Ex: 1 is 1SOL`
       );
       stateData.menu_id = messageId;
-      stateMap_setFocus(chatid, StateCode.WAIT_SET_STEP_AMOUNT, stateData);
+      setStateMapFocus(chatid, StateCode.WAIT_SET_STEP_AMOUNT, stateData);
     } else if (cmd === OptionCode.MAIN_WITHDRAW) {
       await sendReplyMessage(
         chatid,
         `📨 Reply to this message with your wallet address to withdraw.`
       );
       stateData.menu_id = messageId;
-      stateMap_setFocus(chatid, StateCode.WAIT_WALLET_ADRR, stateData);
+      setStateMapFocus(chatid, StateCode.WAIT_WALLET_ADRR, stateData);
     } else if (cmd === OptionCode.CLOSE) {
       await removeMessage(sessionId, messageId);
     } else if (cmd === OptionCode.MAIN_START) {
@@ -768,13 +769,13 @@ export const executeCommand = async (
         text: `⏱️ Initializing... Please wait a sec.`,
       });
       await botLogic.start(chatid, session.addr);
-      const menu: any = await json_main(sessionId);
+      const menu: any = await jsonMain(sessionId);
       let title: string = await getMainMenuMessage(sessionId);
 
       switchMenu(chatid, messageId, title, menu.options);
     } else if (cmd === OptionCode.MAIN_STOP) {
       await botLogic.stop(chatid, session.addr);
-      const menu: any = await json_main(sessionId);
+      const menu: any = await jsonMain(sessionId);
       let title: string = await getMainMenuMessage(sessionId);
 
       switchMenu(chatid, messageId, title, menu.options);

@@ -1,152 +1,24 @@
-import assert from "assert";
 import axios from "axios";
 import * as bip39 from "bip39";
 import base58 from "bs58";
-import * as dotenv from "dotenv";
 import EventEmitter from "events";
 import * as fs from "fs";
-
 import { Metaplex } from "@metaplex-foundation/js";
 import { SPL_ACCOUNT_LAYOUT } from "@raydium-io/raydium-sdk";
 import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { ENV, TokenListProvider } from "@solana/spl-token-registry";
 import { Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
-
-import * as afx from "./global";
+import * as dotenv from "dotenv";
 
 dotenv.config();
 
-export const getSOLPrice = async (): Promise<number> => {
-  try {
-    const { solana } = await fetchAPI(
-      "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
-      "GET"
-    );
-    return solana.usd as number;
-  } catch (error) {
-    await sleep(200);
-    return getSOLPrice();
-  }
-};
+import * as afx from "./global";
 
 const dexscreenerTokenPairUrl: string =
   "https://api.dexscreener.com/latest/dex/tokens/";
 
-export const getPairInfo = async (mint: string) => {
-  const result: any = {};
-  const data = await fetchAPI(dexscreenerTokenPairUrl + mint, "GET");
-  if (data && data.pairs) {
-    for (let pair of data.pairs) {
-      if (pair.chainId == "solana" && pair.dexId == "raydium") {
-        result.dex = pair.dexId;
-        result.pair = pair.baseToken.symbol + " / " + pair.quoteToken.symbol;
-        result.price = pair.priceUsd + "$ / " + pair.priceChange.m5 + "%";
-        result.trx5m =
-          (((pair.txns.m5.buys as number) + pair.txns.m5.sells) as number) +
-          " (" +
-          pair.txns.m5.buys +
-          " buys/" +
-          pair.txns.m5.sells +
-          " sells)";
-        result.trx1h =
-          (((pair.txns.h1.buys as number) + pair.txns.h1.sells) as number) +
-          " (" +
-          pair.txns.h1.buys +
-          " buys/" +
-          pair.txns.h1.sells +
-          " sells)";
-        result.trx6h =
-          (((pair.txns.h6.buys as number) + pair.txns.h6.sells) as number) +
-          " (" +
-          pair.txns.h6.buys +
-          " buys/" +
-          pair.txns.h6.sells +
-          " sells)";
-        result.trx24h =
-          (((pair.txns.h24.buys as number) + pair.txns.h24.sells) as number) +
-          " (" +
-          pair.txns.h24.buys +
-          " buys/" +
-          pair.txns.h24.sells +
-          " sells)";
-        result.volume5m = roundBigUnit(pair.volume.m5, 2);
-        result.volume1h = roundBigUnit(pair.volume.h1, 2);
-        result.volume6h = roundBigUnit(pair.volume.h6, 2);
-        result.volume24h = roundBigUnit(pair.volume.h24, 2);
-        result.lp = roundBigUnit(pair.liquidity.usd, 2);
-        result.mc = roundBigUnit(pair.fdv, 2);
-        if (pair?.info?.websites?.length > 0) {
-          result.socials = {
-            website: pair?.info?.websites[0]?.url,
-          };
-        }
-
-        if (pair?.info?.socials?.length > 0) {
-          for (let social of pair.info.socials) {
-            if (social.type === "telegram") {
-              result.socials = { telegram: social.url, ...result.socials };
-            } else if (social.type === "twitter") {
-              result.socials = { twitter: social.url, ...result.socials };
-            } else if (social.type === "discord") {
-              result.socials = { discord: social.url, ...result.socials };
-            }
-          }
-        }
-        return result;
-      }
-    }
-  }
-  return result;
-};
-
-export const getTokenInfo = async (addr: string) => {
-  const conn = afx.get_mainnet_conn();
-  const metaplex = Metaplex.make(conn);
-
-  const mintAddress = new PublicKey(addr);
-
-  const metadataAccount = metaplex
-    .nfts()
-    .pdas()
-    .metadata({ mint: mintAddress });
-
-  const metadataAccountInfo = await conn.getAccountInfo(metadataAccount);
-
-  if (metadataAccountInfo) {
-    const token = await metaplex
-      .nfts()
-      .findByMint({ mintAddress: mintAddress });
-    if (token) {
-      return {
-        exist: true,
-        symbol: token.mint.currency.symbol,
-        decimal: token.mint.currency.decimals,
-      };
-    } else {
-      return { exist: false, symbol: "", decimal: 0 };
-    }
-  } else {
-    const provider = await new TokenListProvider().resolve();
-    const tokenList = provider.filterByChainId(ENV.MainnetBeta).getList();
-    console.log(tokenList);
-    const tokenMap = tokenList.reduce((map, item) => {
-      map.set(item.address, item);
-      return map;
-    }, new Map());
-
-    const token = tokenMap.get(mintAddress.toBase58());
-
-    if (token) {
-      return {
-        exist: true,
-        symbol: token.mint.currency.symbol,
-        decimal: token.mint.currency.decimals,
-      };
-    } else {
-      return { exist: false, symbol: "", decimal: 0 };
-    }
-  }
-};
+const ReferralCodeBase =
+  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 export const isValidAddress = (address: string) => {
   try {
@@ -157,7 +29,7 @@ export const isValidAddress = (address: string) => {
   }
 };
 
-export function isValidPrivateKey(privateKey: string) {
+export const isValidPrivateKey = (privateKey: string) => {
   try {
     const key = base58.decode(privateKey);
     const keypair = Keypair.fromSecretKey(key);
@@ -165,9 +37,9 @@ export function isValidPrivateKey(privateKey: string) {
   } catch (error) {
     return false;
   }
-}
+};
 
-export function getWalletFromPrivateKey(privateKey: string): any | null {
+export const getWalletFromPrivateKey = (privateKey: string): any | null => {
   try {
     const key: Uint8Array = base58.decode(privateKey);
     const keypair: Keypair = Keypair.fromSecretKey(key);
@@ -179,7 +51,7 @@ export function getWalletFromPrivateKey(privateKey: string): any | null {
   } catch (error) {
     return null;
   }
-}
+};
 
 export const generateNewWallet = () => {
   try {
@@ -195,24 +67,12 @@ export const generateNewWallet = () => {
   }
 };
 
-export function isValidSeedPhrase(seedPhrase: string) {
+export const isValidSeedPhrase = (seedPhrase: string) => {
   // Check if the seed phrase is valid
   const isValid = bip39.validateMnemonic(seedPhrase);
 
   return isValid;
-}
-
-export async function seedPhraseToPrivateKey(
-  seedPhrase: string
-): Promise<string | null> {
-  try {
-    const seed: Buffer = bip39.mnemonicToSeedSync(seedPhrase).slice(0, 32); // Take the first 32 bytes for the seed
-    const keypair: Keypair = Keypair.fromSecretKey(Uint8Array.from(seed));
-    return base58.encode(keypair.secretKey);
-  } catch (error) {
-    return null;
-  }
-}
+};
 
 export const roundDecimal = (number: number, digits: number = 5) => {
   return number.toLocaleString("en-US", { maximumFractionDigits: digits });
@@ -361,38 +221,6 @@ export const getTimeStringUTCFromNumber = (timestamp: number) => {
   return "None";
 };
 
-export const fetchAPI = async (
-  url: string,
-  method: "GET" | "POST",
-  data: Record<string, any> = {}
-): Promise<any | null> => {
-  return new Promise((resolve) => {
-    if (method === "POST") {
-      axios
-        .post(url, data)
-        .then((response) => {
-          let json = response.data;
-          resolve(json);
-        })
-        .catch((error) => {
-          // console.error('[fetchAPI]', error)
-          resolve(null);
-        });
-    } else {
-      axios
-        .get(url)
-        .then((response) => {
-          let json = response.data;
-          resolve(json);
-        })
-        .catch((error) => {
-          // console.error('fetchAPI', error);
-          resolve(null);
-        });
-    }
-  });
-};
-
 export const addressToHex = (address: string) => {
   const hexString = "0x" + address.slice(2).toLowerCase().padStart(64, "0");
   return hexString.toLowerCase();
@@ -416,34 +244,14 @@ export const getShortenedAddress = (address: string) => {
   return str;
 };
 
-export function waitForEvent(
+export const waitForEvent = (
   eventEmitter: EventEmitter,
   eventName: string
-): Promise<void> {
+): Promise<void> => {
   return new Promise<void>((resolve) => {
     eventEmitter.on(eventName, resolve);
   });
-}
-
-export async function waitSeconds(seconds: number) {
-  const eventEmitter = new EventEmitter();
-
-  setTimeout(() => {
-    eventEmitter.emit("TimeEvent");
-  }, seconds * 1000);
-
-  await waitForEvent(eventEmitter, "TimeEvent");
-}
-
-export async function waitMilliseconds(ms: number) {
-  const eventEmitter = new EventEmitter();
-
-  setTimeout(() => {
-    eventEmitter.emit("TimeEvent");
-  }, ms);
-
-  await waitForEvent(eventEmitter, "TimeEvent");
-}
+};
 
 export const getFullTimeElapsedFromSeconds = (totalSecs: number) => {
   if (totalSecs < 0) {
@@ -534,7 +342,7 @@ export const getDateTimeFromTimestamp = (timestmp: number) => {
   return `${month}/${day}/${year}`;
 };
 
-export const getConfigString_Default = (
+export const getConfigString = (
   value: string,
   defaultValue: string,
   unit: string = "",
@@ -563,7 +371,7 @@ export const getConfigString_Default = (
   return output;
 };
 
-export const getConfigString_Text = (
+export const getConfigStringAsText = (
   text: string,
   value: number,
   autoValue: number,
@@ -589,7 +397,7 @@ export const getConfigString_Text = (
   return output;
 };
 
-export const getConfigString_Checked = (value: number) => {
+export const getConfigStringAsChecked = (value: number) => {
   let output: string;
 
   if (value === 2) {
@@ -603,7 +411,7 @@ export const getConfigString_Checked = (value: number) => {
   return output;
 };
 
-export const getConfigWallet_Checked = (value: number) => {
+export const getConfigWalletAsChecked = (value: number) => {
   let output;
 
   if (value === 1) {
@@ -615,7 +423,7 @@ export const getConfigWallet_Checked = (value: number) => {
   return output;
 };
 
-export function objectDeepCopy(obj: any, keysToExclude: string[] = []): any {
+export const objectDeepCopy = (obj: any, keysToExclude: string[] = []): any => {
   if (typeof obj !== "object" || obj === null) {
     return obj; // Return non-objects as is
   }
@@ -628,12 +436,9 @@ export function objectDeepCopy(obj: any, keysToExclude: string[] = []): any {
   }
 
   return copiedObject;
-}
+};
 
-const ReferralCodeBase =
-  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-
-export function encodeChatId(chatId: string) {
+export const encodeChatId = (chatId: string) => {
   const baseLength = ReferralCodeBase.length;
 
   let temp = Number(chatId);
@@ -646,9 +451,9 @@ export function encodeChatId(chatId: string) {
 
   // Pad with zeros to make it 5 characters
   return encoded.padStart(5, "0");
-}
+};
 
-export function decodeChatId(encoded: string) {
+export const decodeChatId = (encoded: string) => {
   const baseLength = ReferralCodeBase.length;
 
   let decoded = 0;
@@ -661,7 +466,7 @@ export function decodeChatId(encoded: string) {
   }
 
   return decoded.toString();
-}
+};
 
 export const getCurrentTimeTick = (ms: boolean = false) => {
   if (ms) {
@@ -671,25 +476,16 @@ export const getCurrentTimeTick = (ms: boolean = false) => {
   return Math.floor(new Date().getTime() / 1000);
 };
 
-// export const encryptPKey = (text: string) => {
-
-//     if (text.startsWith('0x')) {
-//         text = text.substring(2)
-//     }
-
-//     return crypto.aesEncrypt(text, process.env.CRYPT_KEY ?? '')
-// }
-
-// export const decryptPKey = (text: string) => {
-//     return crypto.aesDecrypt(text, process.env.CRYPT_KEY ?? '')
-// }
+export const getRandomNumber = (min: number, max: number) => {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+};
 
 export const getWalletTokenAccount = async (
   wallet: PublicKey,
   isToken2022: boolean = true
 ) => {
   const walletTokenAccount = await afx
-    .get_mainnet_conn()
+    .getMainnetConn()
     .getTokenAccountsByOwner(wallet, {
       programId: isToken2022 ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID,
     });
@@ -726,9 +522,8 @@ export const getWalletTokenBalance = async (
 export const getWalletSOLBalance = async (wallet: any): Promise<number> => {
   try {
     let balance: number =
-      (await afx
-        .get_mainnet_conn()
-        .getBalance(new PublicKey(wallet.publicKey))) / LAMPORTS_PER_SOL;
+      (await afx.getMainnetConn().getBalance(new PublicKey(wallet.publicKey))) /
+      LAMPORTS_PER_SOL;
     return balance;
   } catch (error) {
     console.log(error);
@@ -737,9 +532,138 @@ export const getWalletSOLBalance = async (wallet: any): Promise<number> => {
   return 0;
 };
 
-export const IsTokenAccountInWallet = async (wallet: any, addr: string) => {
+export const getSOLPrice = async (): Promise<number> => {
+  try {
+    const { solana } = await fetchAPI(
+      "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+      "GET"
+    );
+    return solana.usd as number;
+  } catch (error) {
+    await sleep(200);
+    return getSOLPrice();
+  }
+};
+
+export const getPairInfo = async (mint: string) => {
+  const result: any = {};
+  const data = await fetchAPI(dexscreenerTokenPairUrl + mint, "GET");
+  if (data && data.pairs) {
+    for (let pair of data.pairs) {
+      if (pair.chainId == "solana" && pair.dexId == "raydium") {
+        result.dex = pair.dexId;
+        result.pair = pair.baseToken.symbol + " / " + pair.quoteToken.symbol;
+        result.price = pair.priceUsd + "$ / " + pair.priceChange.m5 + "%";
+        result.trx5m =
+          (((pair.txns.m5.buys as number) + pair.txns.m5.sells) as number) +
+          " (" +
+          pair.txns.m5.buys +
+          " buys/" +
+          pair.txns.m5.sells +
+          " sells)";
+        result.trx1h =
+          (((pair.txns.h1.buys as number) + pair.txns.h1.sells) as number) +
+          " (" +
+          pair.txns.h1.buys +
+          " buys/" +
+          pair.txns.h1.sells +
+          " sells)";
+        result.trx6h =
+          (((pair.txns.h6.buys as number) + pair.txns.h6.sells) as number) +
+          " (" +
+          pair.txns.h6.buys +
+          " buys/" +
+          pair.txns.h6.sells +
+          " sells)";
+        result.trx24h =
+          (((pair.txns.h24.buys as number) + pair.txns.h24.sells) as number) +
+          " (" +
+          pair.txns.h24.buys +
+          " buys/" +
+          pair.txns.h24.sells +
+          " sells)";
+        result.volume5m = roundBigUnit(pair.volume.m5, 2);
+        result.volume1h = roundBigUnit(pair.volume.h1, 2);
+        result.volume6h = roundBigUnit(pair.volume.h6, 2);
+        result.volume24h = roundBigUnit(pair.volume.h24, 2);
+        result.lp = roundBigUnit(pair.liquidity.usd, 2);
+        result.mc = roundBigUnit(pair.fdv, 2);
+        if (pair?.info?.websites?.length > 0) {
+          result.socials = {
+            website: pair?.info?.websites[0]?.url,
+          };
+        }
+
+        if (pair?.info?.socials?.length > 0) {
+          for (let social of pair.info.socials) {
+            if (social.type === "telegram") {
+              result.socials = { telegram: social.url, ...result.socials };
+            } else if (social.type === "twitter") {
+              result.socials = { twitter: social.url, ...result.socials };
+            } else if (social.type === "discord") {
+              result.socials = { discord: social.url, ...result.socials };
+            }
+          }
+        }
+        return result;
+      }
+    }
+  }
+  return result;
+};
+
+export const getTokenInfo = async (addr: string) => {
+  const conn = afx.getMainnetConn();
+  const metaplex = Metaplex.make(conn);
+
+  const mintAddress = new PublicKey(addr);
+
+  const metadataAccount = metaplex
+    .nfts()
+    .pdas()
+    .metadata({ mint: mintAddress });
+
+  const metadataAccountInfo = await conn.getAccountInfo(metadataAccount);
+
+  if (metadataAccountInfo) {
+    const token = await metaplex
+      .nfts()
+      .findByMint({ mintAddress: mintAddress });
+    if (token) {
+      return {
+        exist: true,
+        symbol: token.mint.currency.symbol,
+        decimal: token.mint.currency.decimals,
+      };
+    } else {
+      return { exist: false, symbol: "", decimal: 0 };
+    }
+  } else {
+    const provider = await new TokenListProvider().resolve();
+    const tokenList = provider.filterByChainId(ENV.MainnetBeta).getList();
+    console.log(tokenList);
+    const tokenMap = tokenList.reduce((map, item) => {
+      map.set(item.address, item);
+      return map;
+    }, new Map());
+
+    const token = tokenMap.get(mintAddress.toBase58());
+
+    if (token) {
+      return {
+        exist: true,
+        symbol: token.mint.currency.symbol,
+        decimal: token.mint.currency.decimals,
+      };
+    } else {
+      return { exist: false, symbol: "", decimal: 0 };
+    }
+  }
+};
+
+export const isTokenAccountInWallet = async (wallet: any, addr: string) => {
   const walletTokenAccount = await afx
-    .get_mainnet_conn()
+    .getMainnetConn()
     .getTokenAccountsByOwner(wallet.wallet.publicKey, {
       programId: TOKEN_PROGRAM_ID,
     });
@@ -753,6 +677,66 @@ export const IsTokenAccountInWallet = async (wallet: any, addr: string) => {
   return false;
 };
 
-export const getRandomNumber = (min: number, max: number) => {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+export const seedPhraseToPrivateKey = async (
+  seedPhrase: string
+): Promise<string | null> => {
+  try {
+    const seed: Buffer = bip39.mnemonicToSeedSync(seedPhrase).slice(0, 32); // Take the first 32 bytes for the seed
+    const keypair: Keypair = Keypair.fromSecretKey(Uint8Array.from(seed));
+    return base58.encode(keypair.secretKey);
+  } catch (error) {
+    return null;
+  }
+};
+
+export const fetchAPI = async (
+  url: string,
+  method: "GET" | "POST",
+  data: Record<string, any> = {}
+): Promise<any | null> => {
+  return new Promise((resolve) => {
+    if (method === "POST") {
+      axios
+        .post(url, data)
+        .then((response) => {
+          let json = response.data;
+          resolve(json);
+        })
+        .catch((error) => {
+          // console.error('[fetchAPI]', error)
+          resolve(null);
+        });
+    } else {
+      axios
+        .get(url)
+        .then((response) => {
+          let json = response.data;
+          resolve(json);
+        })
+        .catch((error) => {
+          // console.error('fetchAPI', error);
+          resolve(null);
+        });
+    }
+  });
+};
+
+export const waitSeconds = async (seconds: number) => {
+  const eventEmitter = new EventEmitter();
+
+  setTimeout(() => {
+    eventEmitter.emit("TimeEvent");
+  }, seconds * 1000);
+
+  await waitForEvent(eventEmitter, "TimeEvent");
+};
+
+export const waitMilliseconds = async (ms: number) => {
+  const eventEmitter = new EventEmitter();
+
+  setTimeout(() => {
+    eventEmitter.emit("TimeEvent");
+  }, ms);
+
+  await waitForEvent(eventEmitter, "TimeEvent");
 };

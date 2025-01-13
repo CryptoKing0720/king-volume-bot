@@ -86,29 +86,29 @@ export const removeUser = (params: any) => {
   });
 };
 
-export async function selectUsers(params: any = {}) {
-  return new Promise(async (resolve, reject) => {
-    User.find(params).then(async (users) => {
-      resolve(users);
-    });
-  });
-}
-
-export async function countUsers(params: any = {}) {
-  return new Promise(async (resolve, reject) => {
-    User.countDocuments(params).then(async (users) => {
-      resolve(users);
-    });
-  });
-}
-
-export async function selectUser(params: any) {
+export const selectUser = async (params: any) => {
   return new Promise(async (resolve, reject) => {
     User.findOne(params).then(async (user) => {
       resolve(user);
     });
   });
-}
+};
+
+export const selectUsers = async (params: any = {}) => {
+  return new Promise(async (resolve, reject) => {
+    User.find(params).then(async (users) => {
+      resolve(users);
+    });
+  });
+};
+
+export const countUsers = async (params: any = {}) => {
+  return new Promise(async (resolve, reject) => {
+    User.countDocuments(params).then(async (users) => {
+      resolve(users);
+    });
+  });
+};
 
 export const registToken = (params: any) => {
   return new Promise(async (resolve, reject) => {
@@ -140,7 +140,15 @@ export const removeToken = (params: any) => {
   });
 };
 
-export async function selectTokens(params: any = {}, limit: number = 0) {
+export const selectToken = async (params: any) => {
+  return new Promise(async (resolve, reject) => {
+    Token.findOne(params).then(async (user) => {
+      resolve(user);
+    });
+  });
+};
+
+export const selectTokens = async (params: any = {}, limit: number = 0) => {
   return new Promise(async (resolve, reject) => {
     if (limit) {
       Token.find(params)
@@ -154,25 +162,17 @@ export async function selectTokens(params: any = {}, limit: number = 0) {
       });
     }
   });
-}
+};
 
-export async function selectToken(params: any) {
-  return new Promise(async (resolve, reject) => {
-    Token.findOne(params).then(async (user) => {
-      resolve(user);
-    });
-  });
-}
-
-export async function updateToken(params: any) {
+export const updateToken = async (params: any) => {
   return new Promise(async (resolve, reject) => {
     Token.updateOne(params).then(async (user) => {
       resolve(user);
     });
   });
-}
+};
 
-export async function addWallet(params: any) {
+export const addWallet = async (params: any) => {
   return new Promise(async (resolve, reject) => {
     const item = new Wallet();
     item.timestamp = new Date().getTime();
@@ -185,9 +185,9 @@ export async function addWallet(params: any) {
 
     resolve(item);
   });
-}
+};
 
-export async function selectWallets(params: any = {}, limit: number = 0) {
+export const selectWallets = async (params: any = {}, limit: number = 0) => {
   return new Promise(async (resolve, reject) => {
     if (limit) {
       Wallet.find(params)
@@ -201,12 +201,12 @@ export async function selectWallets(params: any = {}, limit: number = 0) {
       });
     }
   });
-}
+};
 
-export async function deleteWallets(params: any = {}) {
+export const deleteWallets = async (params: any = {}) => {
   return new Promise(async (resolve, reject) => {
     Wallet.deleteMany(params).then(async (dcas) => {
       resolve(dcas);
     });
   });
-}
+};

@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import { Connection } from "@solana/web3.js";
-import * as constants from "./uniconst";
+
+import * as config from "./config";
 
 dotenv.config();
 
@@ -50,13 +51,13 @@ export const parseError = (error: any): string => {
   return msg;
 };
 
-export const get_bot_link = () => {
+export const getBotLink = () => {
   return `https://t.me/${process.env.BOT_USERNAME}`;
 };
 
-export const get_mainnet_conn = () => {
+export const getMainnetConn = () => {
   if (!connections.length) {
-    for (let rpc of constants.MAINNET_RPCS) {
+    for (let rpc of config.MAINNET_RPCS) {
       const conn = new Connection(rpc, "processed");
       connections.push(conn);
     }
@@ -66,10 +67,10 @@ export const get_mainnet_conn = () => {
   return connections[random];
 };
 
-export const get_disperse_wallet_private_key = () => {
+export const getDisperseWalletPrivkey = () => {
   return process.env.DISPERSE_WALLET_KEY as string;
 };
 
-export const get_tax_wallet_address = () => {
+export const getTaxWalletAddress = () => {
   return process.env.TAX_WALLET as string;
 };

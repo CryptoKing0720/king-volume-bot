@@ -1,41 +1,18 @@
-import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 
-import * as bot from "./bot";
+import * as instance from "./bot";
 import * as database from "./db";
 import * as fastSwap from "./fast_swap";
 import * as global from "./global";
-import * as jitoBundler from "./jito_bundler";
-import * as constants from "./uniconst";
+import * as bundle from "./bundle";
+import * as config from "./config";
 import * as utils from "./utils";
 
-const jito_bundler = new jitoBundler.JitoBundler();
+const jitoBundler = new bundle.JitoBundler();
 
-const LookUpTableMap = new Map();
+const lookUpTableMap = new Map();
 
 let solPrice = 0;
-
-export const registerToken = async (
-  chatid: string, // this value is not filled in case of web request, so this could be 0
-  addr: string,
-  symbol: string,
-  decimal: number
-) => {
-  if (await database.selectToken({ chatid, addr })) {
-    return constants.ResultCode.SUCCESS;
-  }
-  const tokens: any = await database.selectTokens({});
-  const regist = await database.registToken({
-    chatid,
-    addr,
-    symbol,
-    decimal,
-    idx: tokens.length + 1,
-  });
-  if (!regist) {
-    return constants.ResultCode.INTERNAL;
-  }
-  return constants.ResultCode.SUCCESS;
-};
 
 const makeTransactionAndSendBundle = async (
   depositWallet: any,
@@ -46,7 +23,7 @@ const makeTransactionAndSendBundle = async (
   let buyAmount: number = parseFloat(
     (await utils.getWalletSOLBalance(depositWallet)).toFixed(5)
   );
-  if (buyAmount < constants.LIMIT_REST_SOL_BALANCE * 5) {
+  if (buyAmount < config.LIMIT_REST_SOL_BALANCE * 5) {
     return;
   }
   const tokenBalance: number = await utils.getWalletTokenBalance(
@@ -55,13 +32,13 @@ const makeTransactionAndSendBundle = async (
     token.decimal
   );
   const bundleTransactions: any[] = [];
-  if (buyAmount < token.solAmount + constants.LIMIT_REST_SOL_BALANCE) {
-    buyAmount -= constants.LIMIT_REST_SOL_BALANCE;
+  if (buyAmount < token.solAmount + config.LIMIT_REST_SOL_BALANCE) {
+    buyAmount -= config.LIMIT_REST_SOL_BALANCE;
   } else {
     buyAmount = token.solAmount;
   }
   if (buyAmount <= 0) return;
-  const conn = global.get_mainnet_conn();
+  const conn = global.getMainnetConn();
   let totalSwapSolAmount: number = buyAmount;
   for (let i = 0; i < wallets.length; i++) {
     try {
@@ -71,12 +48,12 @@ const makeTransactionAndSendBundle = async (
       const transferToWallet = fastSwap.getTransferSOLInst(
         depositWallet,
         wallet.publicKey,
-        constants.EXCHANGE_SOL
+        config.EXCHANGE_SOL
       );
       const transferFromWallet = fastSwap.getTransferSOLInst(
         wallet,
         depositWallet.publicKey,
-        constants.EXCHANGE_SOL
+        config.EXCHANGE_SOL
       );
       instructions.push(transferFromWallet);
       instructions.push(transferToWallet);
@@ -104,25 +81,25 @@ const makeTransactionAndSendBundle = async (
       totalSwapSolAmount += buyAmount;
       if (i >= wallets.length - 1) {
         const tax = parseFloat(
-          (totalSwapSolAmount * 2 * constants.TAX).toFixed(9)
+          (totalSwapSolAmount * 2 * config.TAX).toFixed(9)
         );
         if (tax > 0) {
           instructions.push(
             fastSwap.getTransferSOLInst(
               depositWallet,
-              global.get_tax_wallet_address(),
+              global.getTaxWalletAddress(),
               tax
             )
           );
         }
-        const tipAccounts = constants.JITO_TIP_ACCOUNTS;
+        const tipAccounts = config.JITO_TIP_ACCOUNTS;
         const tipAccount =
           tipAccounts[utils.getRandomNumber(0, tipAccounts.length - 1)];
         instructions.push(
           fastSwap.getTransferSOLInst(
             depositWallet,
             tipAccount,
-            constants.JITO_BUNDLE_TIP
+            config.JITO_BUNDLE_TIP
           )
         );
       }
@@ -131,7 +108,7 @@ const makeTransactionAndSendBundle = async (
         conn,
         [wallet.wallet, depositWallet.wallet],
         instructions,
-        LookUpTableMap.get(token.addr)
+        lookUpTableMap.get(token.addr)
       );
       if (versionedTransaction) {
         const simulateTx = await conn.simulateTransaction(versionedTransaction);
@@ -147,7 +124,7 @@ const makeTransactionAndSendBundle = async (
   }
   console.log("BundleTx Length: ", bundleTransactions.length);
   if (
-    !(await jito_bundler.sendBundles(bundleTransactions, null, 2)) &&
+    !(await jitoBundler.sendBundles(bundleTransactions, null, 2)) &&
     maxRetry
   ) {
     makeTransactionAndSendBundle(depositWallet, wallets, token, maxRetry - 1);
@@ -162,6 +139,61 @@ const makeTransactionAndSendBundle = async (
   }
 };
 
+const sellAllTokens = async (chatid: string, addr: string) => {
+  const user: any = await database.selectUser({ chatid });
+  const depositWallet: any = utils.getWalletFromPrivateKey(user.depositWallet);
+  const token: any = await database.selectToken({ chatid, addr });
+  const loadPoolKeys: boolean = await fastSwap.loadPoolkeysFromMarket(
+    token.addr,
+    token.decimal
+  );
+  if (loadPoolKeys) {
+    const tokenBalance: number = await utils.getWalletTokenBalance(
+      depositWallet,
+      token.addr,
+      token.decimal
+    );
+    if (!tokenBalance || tokenBalance < 1) {
+      return;
+    }
+    const sellInsts: any = await fastSwap.getSellTransactionInsts(
+      depositWallet,
+      tokenBalance,
+      fastSwap.PoolKeysMap.get(token.addr)
+    );
+    const versionedTransaction = await fastSwap.getVersionedTransaction(
+      global.getMainnetConn(),
+      [depositWallet.wallet],
+      sellInsts.instructions,
+      null
+    );
+    await jitoBundler.sendBundles([versionedTransaction], depositWallet, 4);
+  }
+};
+
+export const registerToken = async (
+  chatid: string, // this value is not filled in case of web request, so this could be 0
+  addr: string,
+  symbol: string,
+  decimal: number
+) => {
+  if (await database.selectToken({ chatid, addr })) {
+    return config.ResultCode.SUCCESS;
+  }
+  const tokens: any = await database.selectTokens({});
+  const regist = await database.registToken({
+    chatid,
+    addr,
+    symbol,
+    decimal,
+    idx: tokens.length + 1,
+  });
+  if (!regist) {
+    return config.ResultCode.INTERNAL;
+  }
+  return config.ResultCode.SUCCESS;
+};
+
 export const run = async (chatid: string, addr: string) => {
   const user: any = await database.selectUser({ chatid });
   const depositWallet: any = utils.getWalletFromPrivateKey(user.depositWallet);
@@ -173,8 +205,11 @@ export const run = async (chatid: string, addr: string) => {
   let lastWorkingTime = new Date().getDate();
   for (let i = 0; i < wallets.length; i++) {
     token = await database.selectToken({ chatid, addr });
-    if (token.volume / constants.VOLUME_UNIT >= token.target) {
-      await bot.sendMessage(chatid, "😀 Congratulation, Bot achieved target.");
+    if (token.volume / config.VOLUME_UNIT >= token.target) {
+      await instance.sendMessage(
+        chatid,
+        "😀 Congratulation, Bot achieved target."
+      );
       await stop(chatid, addr);
       break;
     }
@@ -188,8 +223,8 @@ export const run = async (chatid: string, addr: string) => {
     reqWallets.push(wallets[i]);
     if (reqWallets.length == 5) {
       const solBalance: number = await utils.getWalletSOLBalance(depositWallet);
-      if (solBalance < constants.LIMIT_REST_SOL_BALANCE) {
-        await bot.sendMessage(
+      if (solBalance < config.LIMIT_REST_SOL_BALANCE) {
+        await instance.sendMessage(
           chatid,
           "⚠️ Warning, There is not enough SOL. Please deposit more SOL if you wanna make volume and try again."
         );
@@ -225,21 +260,21 @@ export const start = async (
   const depositWallet: any = utils.getWalletFromPrivateKey(user.depositWallet);
   const token: any = await database.selectToken({ chatid, addr });
   const solBalance: number = await utils.getWalletSOLBalance(depositWallet);
-  if (solBalance < constants.LIMIT_REST_SOL_BALANCE * 5) {
-    await bot.sendMessage(
+  if (solBalance < config.LIMIT_REST_SOL_BALANCE * 5) {
+    await instance.sendMessage(
       chatid,
       "⚠️ Warning, There is not enough SOL. Please deposit more SOL if you wanna make volume and try again."
     );
-    return constants.ResultCode.USER_INSUFFICIENT_ENOUGH_SOL;
+    return config.ResultCode.USER_INSUFFICIENT_ENOUGH_SOL;
   }
-  const conn = global.get_mainnet_conn();
+  const conn = global.getMainnetConn();
 
   if (token.botId) {
-    return constants.ResultCode.SUCCESS;
+    return config.ResultCode.SUCCESS;
   }
   token.botId = 1;
   await token.save();
-  const loadPoolKeys: boolean = await fastSwap.loadPoolKeys_from_market(
+  const loadPoolKeys: boolean = await fastSwap.loadPoolkeysFromMarket(
     token.addr,
     token.decimal
   );
@@ -250,7 +285,7 @@ export const start = async (
           commitment: "finalized",
         })
       ).value;
-      LookUpTableMap.set(token.addr, lookupTableAccount);
+      lookUpTableMap.set(token.addr, lookupTableAccount);
     }
     if (!token.lookupTableAddr || token.lookupTableAddr == "") {
       const poolKeys = fastSwap.PoolKeysMap.get(token.addr);
@@ -258,7 +293,7 @@ export const start = async (
         depositWallet,
         poolKeys
       );
-      await jito_bundler.sendBundles(
+      await jitoBundler.sendBundles(
         createLookupTable.transactions,
         depositWallet,
         10
@@ -274,13 +309,13 @@ export const start = async (
           )
         ).value;
         if (lookupTableAccount) {
-          LookUpTableMap.set(token.addr, lookupTableAccount);
+          lookUpTableMap.set(token.addr, lookupTableAccount);
           break;
         }
       }
     }
 
-    if (!(await utils.IsTokenAccountInWallet(depositWallet, addr))) {
+    if (!(await utils.isTokenAccountInWallet(depositWallet, addr))) {
       const insts = [
         fastSwap.getCreateAccountTransactionInst(
           depositWallet,
@@ -292,67 +327,35 @@ export const start = async (
         conn,
         [depositWallet.wallet],
         insts,
-        LookUpTableMap.get(token.addr)
+        lookUpTableMap.get(token.addr)
       );
-      await jito_bundler.sendBundles([versionedTransaction], depositWallet, 10);
+      await jitoBundler.sendBundles([versionedTransaction], depositWallet, 10);
       await utils.sleep(4000);
     }
 
     try {
       await fastSwap.getBuyTransactionInsts(
         depositWallet,
-        constants.MIN_BUY_AMOUNT,
+        config.MIN_BUY_AMOUNT,
         fastSwap.PoolKeysMap.get(token.addr)
       );
     } catch (error) {
       console.log(error);
 
       await token.save();
-      await bot.sendMessage(
+      await instance.sendMessage(
         chatid,
         "Sorry, Bot cann't buy this token now. Please try again later."
       );
       token.botId = 0;
       await token.save();
-      return constants.ResultCode.INTERNAL;
+      return config.ResultCode.INTERNAL;
     }
 
     console.log("----------running--------");
     run(chatid, addr);
   }
-  return constants.ResultCode.SUCCESS;
-};
-
-const sellAllTokens = async (chatid: string, addr: string) => {
-  const user: any = await database.selectUser({ chatid });
-  const depositWallet: any = utils.getWalletFromPrivateKey(user.depositWallet);
-  const token: any = await database.selectToken({ chatid, addr });
-  const loadPoolKeys: boolean = await fastSwap.loadPoolKeys_from_market(
-    token.addr,
-    token.decimal
-  );
-  if (loadPoolKeys) {
-    const tokenBalance: number = await utils.getWalletTokenBalance(
-      depositWallet,
-      token.addr,
-      token.decimal
-    );
-    if (!tokenBalance || tokenBalance < 1) {
-      return;
-    }
-    const sellInsts: any = await fastSwap.getSellTransactionInsts(
-      depositWallet,
-      tokenBalance,
-      fastSwap.PoolKeysMap.get(token.addr)
-    );
-    const versionedTransaction = await fastSwap.getVersionedTransaction(
-      global.get_mainnet_conn(),
-      [depositWallet.wallet],
-      sellInsts.instructions,
-      null
-    );
-    await jito_bundler.sendBundles([versionedTransaction], depositWallet, 4);
-  }
+  return config.ResultCode.SUCCESS;
 };
 
 export const stop = async (chatid: string, addr: string) => {
@@ -360,7 +363,7 @@ export const stop = async (chatid: string, addr: string) => {
   await sellAllTokens(chatid, addr);
   token.botId = 0;
   await token.save();
-  return constants.ResultCode.SUCCESS;
+  return config.ResultCode.SUCCESS;
 };
 
 export const withdraw = async (chatid: string, addr: string) => {
@@ -369,13 +372,13 @@ export const withdraw = async (chatid: string, addr: string) => {
   const depositWalletSOLBalance: number = await utils.getWalletSOLBalance(
     depositWallet
   );
-  if (depositWalletSOLBalance <= constants.SOL_TRANSFER_FEE) {
+  if (depositWalletSOLBalance <= config.SOL_TRANSFER_FEE) {
     return false;
   }
-  return await jito_bundler.sendBundles(
+  return await jitoBundler.sendBundles(
     [
       await fastSwap.getVersionedTransaction(
-        global.get_mainnet_conn(),
+        global.getMainnetConn(),
         [depositWallet.wallet],
         [
           fastSwap.getTransferSOLInst(

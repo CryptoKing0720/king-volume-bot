@@ -1,10 +1,9 @@
 import base58 from "bs58";
 import axios from "axios";
-// import { searcherClient } from 'jito-ts/dist/sdk/block-engine/searcher';
-// import { Bundle } from 'jito-ts/dist/sdk/block-engine/types';
 import { searcher, bundle } from "jito-ts";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
-import * as constants from "./uniconst";
+
+import * as config from "./config";
 import * as utils from "./utils";
 
 const DELAY_PER_REQ = 350;
@@ -12,7 +11,7 @@ const MAX_REQ_COUNT = 4;
 const JITO_BUNDLE_TIP = 1000000;
 const JITO_BUNDLE_LIMIT_SIZE = 5;
 
-const connection = new Connection(constants.MAINNET_RPCS[0], "processed");
+const connection = new Connection(config.MAINNET_RPCS[0], "processed");
 
 const JITO_BLOCK_ENGINES = [
   "amsterdam.mainnet.block-engine.jito.wtf",
@@ -58,8 +57,18 @@ const JITO_AUTH_KEYS = [
   "4EhHPoqXKxgWR9JZQz2Mjy7hPCtJzp2RGtCENdWFEvHJcztRXu6GWNXi1aHA9J7fXso4T89hrGzhpcUZmtqoAnrp",
 ];
 
-const sleep = (ms: number) => {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+const getWalletFromPrivateKey = (privateKey: string) => {
+  try {
+    const key = base58.decode(privateKey);
+    const keypair = Keypair.fromSecretKey(key);
+
+    const publicKey = keypair.publicKey.toBase58();
+    const secretKey = base58.encode(keypair.secretKey);
+
+    return { publicKey, secretKey, wallet: keypair };
+  } catch (error) {
+    return null;
+  }
 };
 
 const makeJitoPostRequest = async (payload: any, options = {}) => {
@@ -74,20 +83,6 @@ const makeJitoPostRequest = async (payload: any, options = {}) => {
     } catch (error) {}
   }
   throw new Error("All RPC requests failed");
-};
-
-const getWalletFromPrivateKey = (privateKey: string) => {
-  try {
-    const key = base58.decode(privateKey);
-    const keypair = Keypair.fromSecretKey(key);
-
-    const publicKey = keypair.publicKey.toBase58();
-    const secretKey = base58.encode(keypair.secretKey);
-
-    return { publicKey, secretKey, wallet: keypair };
-  } catch (error) {
-    return null;
-  }
 };
 
 class JitoBundle {
@@ -134,7 +129,7 @@ class JitoBundle {
   ): Promise<boolean> => {
     const wallet: any = getWalletFromPrivateKey(key);
     const seacher = searcher.searcherClient(this.engineURL, wallet.wallet);
-    const tipAccounts = constants.JITO_TIP_ACCOUNTS;
+    const tipAccounts = config.JITO_TIP_ACCOUNTS;
     const tipAccount = new PublicKey(
       tipAccounts[utils.getRandomNumber(0, tipAccounts.length - 1)]
     );
@@ -175,18 +170,18 @@ export class JitoBundler {
     }
   }
 
+  private getJitoKey = (): string => {
+    return JITO_AUTH_KEYS[Math.floor(Math.random() * JITO_AUTH_KEYS.length)];
+  };
+
   private getIdleBundle = async (): Promise<JitoBundle> => {
     while (true) {
       let randIdx = Math.floor(Math.random() * JITO_BLOCK_ENGINES.length);
       if (!this.bundlers[randIdx].IsBusy()) {
         return this.bundlers[randIdx];
       }
-      await sleep(100);
+      await utils.sleep(100);
     }
-  };
-
-  private getJitoKey = (): string => {
-    return JITO_AUTH_KEYS[Math.floor(Math.random() * JITO_AUTH_KEYS.length)];
   };
 
   public sendBundles = async (
@@ -210,7 +205,7 @@ export class JitoBundler {
     );
     maxRetry--;
     if (!result && maxRetry) {
-      await sleep(500);
+      await utils.sleep(500);
       return await this.sendBundles(
         bundleTransactions.slice(0, len),
         payer,

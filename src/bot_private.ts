@@ -2,9 +2,8 @@ import assert from "assert";
 import dotenv from "dotenv";
 
 import * as instance from "./bot";
-import { OptionCode, StateCode } from "./bot";
 import * as botLogic from "./bot_logic";
-import * as constants from "./uniconst";
+import * as config from "./config";
 import * as utils from "./utils";
 
 dotenv.config();
@@ -60,12 +59,135 @@ You can earn 1.5% of their earning forever!`
   return false;
 };
 
+const processSettings = async (msg: any, database: any) => {
+  const sessionId = msg.chat?.id.toString();
+  let messageId = msg?.messageId;
+
+  const session = instance.sessions.get(sessionId);
+  if (!session) {
+    return;
+  }
+
+  let stateNode = instance.getStateMapFocus(sessionId);
+  if (!stateNode) {
+    instance.setStateMapFocus(sessionId, instance.StateCode.IDLE, {
+      sessionId: sessionId,
+    });
+    stateNode = instance.getStateMap(sessionId);
+
+    assert(stateNode);
+  }
+
+  const stateData = stateNode.data;
+
+  if (stateNode.state === instance.StateCode.WAIT_SET_TARGET_VOLUME) {
+    const value = Number(msg.text.trim());
+    if (isNaN(value) || value < 0.1) {
+      instance.openMessage(
+        sessionId,
+        "",
+        0,
+        `⛔ Sorry, the target volume amount you entered is invalid. Please try again`
+      );
+      return;
+    }
+    const token: any = await database.selectToken({
+      chatid: sessionId,
+      addr: session.addr,
+    });
+    token.target = value;
+    await token.save();
+    const menu: any = await instance.jsonMain(sessionId);
+    let title: string = await instance.getMainMenuMessage(sessionId);
+
+    await instance.switchMenu(
+      sessionId,
+      stateData.message_id,
+      title,
+      menu.options
+    );
+  } else if (stateNode.state === instance.StateCode.WAIT_SET_DELAY) {
+    const value = Number(msg.text.trim());
+    if (isNaN(value) || value < 1) {
+      instance.openMessage(
+        sessionId,
+        "",
+        0,
+        `⛔ Sorry, the delay time you entered is invalid. Please try again`
+      );
+      return;
+    }
+    const token: any = await database.selectToken({
+      chatid: sessionId,
+      addr: session.addr,
+    });
+    token.delay = value;
+    await token.save();
+    const menu: any = await instance.jsonMain(sessionId);
+    let title: string = await instance.getMainMenuMessage(sessionId);
+
+    await instance.switchMenu(
+      sessionId,
+      stateData.message_id,
+      title,
+      menu.options
+    );
+  } else if (stateNode.state === instance.StateCode.WAIT_SET_STEP_AMOUNT) {
+    const value = Number(msg.text.trim());
+    if (isNaN(value) || value < 0.1) {
+      instance.openMessage(
+        sessionId,
+        "",
+        0,
+        `⛔ Sorry, the sol amount you entered is invalid. Please try again`
+      );
+      return;
+    }
+    const token: any = await database.selectToken({
+      chatid: sessionId,
+      addr: session.addr,
+    });
+    token.solAmount = value;
+    await token.save();
+    const menu: any = await instance.jsonMain(sessionId);
+    let title: string = await instance.getMainMenuMessage(sessionId);
+
+    await instance.switchMenu(
+      sessionId,
+      stateData.message_id,
+      title,
+      menu.options
+    );
+  } else if (stateNode.state === instance.StateCode.WAIT_WALLET_ADRR) {
+    const value = msg.text.trim();
+    if (!value || value === "" || !utils.isValidAddress(value)) {
+      instance.openMessage(
+        sessionId,
+        "",
+        0,
+        `⛔ Sorry, the wallet address you entered is invalid. Please try again`
+      );
+      return;
+    }
+    await botLogic.withdraw(sessionId, value);
+    const menu: any = await instance.jsonMain(sessionId);
+    let title: string = await instance.getMainMenuMessage(sessionId);
+
+    await instance.switchMenu(
+      sessionId,
+      stateData.message_id,
+      title,
+      menu.options
+    );
+  }
+};
+
 export const procMessage = async (message: any, database: any) => {
   let chatid = message.chat.id.toString();
   let session = instance.sessions.get(chatid);
   let userName = message?.chat?.username;
   let messageId = message?.messageId;
-  let stateNode = instance.stateMap_getFocus(chatid);
+  let stateNode = instance.getStateMapFocus(chatid);
   const stateData = stateNode?.data;
 
   if (instance.busy) {
@@ -143,7 +265,7 @@ export const procMessage = async (message: any, database: any) => {
         `You are welcome, To get quick start, please input token address.`
       );
     }
-    // instance.stateMap_remove(chatid)
+    // instance.removeStateMap(chatid)
   } else if (message.reply_to_message) {
     processSettings(message, database);
     await instance.removeMessage(chatid, message.message_id); //TGR
@@ -173,7 +295,7 @@ export const procMessage = async (message: any, database: any) => {
         symbol,
         decimal
       );
-      if (registered === constants.ResultCode.SUCCESS) {
+      if (registered === config.ResultCode.SUCCESS) {
         await instance.removeMessage(chatid, messageId);
         await instance.openMessage(
           chatid,
@@ -194,7 +316,7 @@ export const procMessage = async (message: any, database: any) => {
     session.addr = command;
     await database.updateUser(session);
     await instance.executeCommand(chatid, undefined, undefined, {
-      c: OptionCode.MAIN_MENU,
+      c: instance.OptionCode.MAIN_MENU,
       k: `${chatid}`,
     });
   } else {
@@ -203,129 +325,6 @@ export const procMessage = async (message: any, database: any) => {
       "",
       0,
       `😉 You are welcome, To get quick start, please enter token address.`
-    );
-  }
-};
-
-const processSettings = async (msg: any, database: any) => {
-  const sessionId = msg.chat?.id.toString();
-  let messageId = msg?.messageId;
-
-  const session = instance.sessions.get(sessionId);
-  if (!session) {
-    return;
-  }
-
-  let stateNode = instance.stateMap_getFocus(sessionId);
-  if (!stateNode) {
-    instance.stateMap_setFocus(sessionId, StateCode.IDLE, {
-      sessionId: sessionId,
-    });
-    stateNode = instance.stateMap_get(sessionId);
-
-    assert(stateNode);
-  }
-
-  const stateData = stateNode.data;
-
-  if (stateNode.state === StateCode.WAIT_SET_TARGET_VOLUME) {
-    const value = Number(msg.text.trim());
-    if (isNaN(value) || value < 0.1) {
-      instance.openMessage(
-        sessionId,
-        "",
-        0,
-        `⛔ Sorry, the target volume amount you entered is invalid. Please try again`
-      );
-      return;
-    }
-    const token: any = await database.selectToken({
-      chatid: sessionId,
-      addr: session.addr,
-    });
-    token.target = value;
-    await token.save();
-    const menu: any = await instance.json_main(sessionId);
-    let title: string = await instance.getMainMenuMessage(sessionId);
-
-    await instance.switchMenu(
-      sessionId,
-      stateData.message_id,
-      title,
-      menu.options
-    );
-  } else if (stateNode.state === StateCode.WAIT_SET_DELAY) {
-    const value = Number(msg.text.trim());
-    if (isNaN(value) || value < 1) {
-      instance.openMessage(
-        sessionId,
-        "",
-        0,
-        `⛔ Sorry, the delay time you entered is invalid. Please try again`
-      );
-      return;
-    }
-    const token: any = await database.selectToken({
-      chatid: sessionId,
-      addr: session.addr,
-    });
-    token.delay = value;
-    await token.save();
-    const menu: any = await instance.json_main(sessionId);
-    let title: string = await instance.getMainMenuMessage(sessionId);
-
-    await instance.switchMenu(
-      sessionId,
-      stateData.message_id,
-      title,
-      menu.options
-    );
-  } else if (stateNode.state === StateCode.WAIT_SET_STEP_AMOUNT) {
-    const value = Number(msg.text.trim());
-    if (isNaN(value) || value < 0.1) {
-      instance.openMessage(
-        sessionId,
-        "",
-        0,
-        `⛔ Sorry, the sol amount you entered is invalid. Please try again`
-      );
-      return;
-    }
-    const token: any = await database.selectToken({
-      chatid: sessionId,
-      addr: session.addr,
-    });
-    token.solAmount = value;
-    await token.save();
-    const menu: any = await instance.json_main(sessionId);
-    let title: string = await instance.getMainMenuMessage(sessionId);
-
-    await instance.switchMenu(
-      sessionId,
-      stateData.message_id,
-      title,
-      menu.options
-    );
-  } else if (stateNode.state === StateCode.WAIT_WALLET_ADRR) {
-    const value = msg.text.trim();
-    if (!value || value === "" || !utils.isValidAddress(value)) {
-      instance.openMessage(
-        sessionId,
-        "",
-        0,
-        `⛔ Sorry, the wallet address you entered is invalid. Please try again`
-      );
-      return;
-    }
-    await botLogic.withdraw(sessionId, value);
-    const menu: any = await instance.json_main(sessionId);
-    let title: string = await instance.getMainMenuMessage(sessionId);
-
-    await instance.switchMenu(
-      sessionId,
-      stateData.message_id,
-      title,
-      menu.options
     );
   }
 };

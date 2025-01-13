@@ -20,25 +20,136 @@ import {
   AddressLookupTableProgram,
   ComputeBudgetProgram,
   Connection,
-  Keypair,
   LAMPORTS_PER_SOL,
   PublicKey,
   SystemProgram,
-  Transaction,
-  TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
 
 import * as global from "./global";
-import * as constants from "./uniconst";
+import * as config from "./config";
 import * as utils from "./utils";
-
-export const PoolKeysMap = new Map();
 
 const dexscreenerAPI: string = "https://api.dexscreener.com/latest/dex/tokens/";
 
-export const loadPoolKeys_from_market = async (
+export const PoolKeysMap = new Map();
+
+const getTokenAccountByOwnerAndMint = (mint: PublicKey) => {
+  return {
+    programId: TOKEN_PROGRAM_ID,
+    pubkey: PublicKey.default,
+    accountInfo: {
+      mint: mint,
+      amount: 0,
+    },
+  } as unknown as TokenAccount;
+};
+
+const calcAmountOut = async (
+  poolKeys: LiquidityPoolKeys,
+  rawAmountIn: number,
+  swapInDirection: boolean
+) => {
+  const poolInfo = await Liquidity.fetchInfo({
+    connection: global.getMainnetConn(),
+    poolKeys,
+  });
+
+  let currencyInMint = poolKeys.baseMint;
+  let currencyInDecimals = poolInfo.baseDecimals;
+  let currencyOutMint = poolKeys.quoteMint;
+  let currencyOutDecimals = poolInfo.quoteDecimals;
+
+  if (!swapInDirection) {
+    currencyInMint = poolKeys.quoteMint;
+    currencyInDecimals = poolInfo.quoteDecimals;
+    currencyOutMint = poolKeys.baseMint;
+    currencyOutDecimals = poolInfo.baseDecimals;
+  }
+
+  const currencyIn = new Token(
+    TOKEN_PROGRAM_ID,
+    currencyInMint,
+    currencyInDecimals
+  );
+  const amountIn = new TokenAmount(currencyIn, rawAmountIn, false);
+  const currencyOut = new Token(
+    TOKEN_PROGRAM_ID,
+    currencyOutMint,
+    currencyOutDecimals
+  );
+  const slippage = new Percent(10, 100); // 5% slippage
+
+  const {
+    amountOut,
+    minAmountOut,
+    currentPrice,
+    executionPrice,
+    priceImpact,
+    fee,
+  } = Liquidity.computeAmountOut({
+    poolKeys,
+    poolInfo,
+    amountIn,
+    currencyOut,
+    slippage,
+  });
+
+  return {
+    amountIn,
+    amountOut,
+    minAmountOut,
+    currentPrice,
+    executionPrice,
+    priceImpact,
+    fee,
+  };
+};
+
+export const getPriorityFeeInst = () => {
+  const PRIORITY_FEE_INSTRUCTIONS = ComputeBudgetProgram.setComputeUnitPrice({
+    microLamports: config.PRIORITY_RATE,
+  });
+  return PRIORITY_FEE_INSTRUCTIONS;
+};
+
+export const getCreateAccountTransactionInst = (
+  payer: any,
+  wallet: any,
+  addr: string
+) => {
+  const associatedToken = getAssociatedTokenAddressSync(
+    new PublicKey(addr),
+    wallet.wallet.publicKey,
+    true,
+    TOKEN_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID
+  );
+
+  return createAssociatedTokenAccountInstruction(
+    payer.wallet.publicKey,
+    associatedToken,
+    wallet.wallet.publicKey,
+    new PublicKey(addr),
+    TOKEN_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID
+  );
+};
+
+export const getTransferSOLInst = (
+  fromWallet: any,
+  toAddr: string,
+  amount: number
+) => {
+  return SystemProgram.transfer({
+    fromPubkey: fromWallet.wallet.publicKey,
+    toPubkey: new PublicKey(toAddr),
+    lamports: Math.floor(amount * LAMPORTS_PER_SOL),
+  });
+};
+
+export const loadPoolkeysFromMarket = async (
   base: string,
   baseDecimal: number
 ): Promise<boolean> => {
@@ -66,7 +177,7 @@ export const loadPoolKeys_from_market = async (
     return false;
   }
 
-  const conn = global.get_mainnet_conn();
+  const conn = global.getMainnetConn();
   try {
     let direction: boolean = true;
     let poolIds: any[] = await Market.findAccountsByMints(
@@ -125,11 +236,12 @@ export const loadPoolKeys_from_market = async (
   }
   return false;
 };
+
 export const getCreateLookUpTableTransaction = async (
   payer: any,
   poolKeys: any
 ) => {
-  const conn = global.get_mainnet_conn();
+  const conn = global.getMainnetConn();
   const slot = await conn.getSlot();
   const [lookupTableInst, lookupTableAddress] =
     AddressLookupTableProgram.createLookupTable({
@@ -220,29 +332,6 @@ export const getCreateLookUpTableTransaction = async (
   };
 };
 
-export const getCreateAccountTransactionInst = (
-  payer: any,
-  wallet: any,
-  addr: string
-) => {
-  const associatedToken = getAssociatedTokenAddressSync(
-    new PublicKey(addr),
-    wallet.wallet.publicKey,
-    true,
-    TOKEN_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID
-  );
-
-  return createAssociatedTokenAccountInstruction(
-    payer.wallet.publicKey,
-    associatedToken,
-    wallet.wallet.publicKey,
-    new PublicKey(addr),
-    TOKEN_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID
-  );
-};
-
 export const getBuyTransactionInsts = async (
   wallet: any,
   amount: number,
@@ -260,7 +349,7 @@ export const getBuyTransactionInsts = async (
     false
   );
   const swapToTokenTransaction = await Liquidity.makeSwapInstructionSimple({
-    connection: global.get_mainnet_conn(),
+    connection: global.getMainnetConn(),
     makeTxVersion: 0,
     poolKeys: {
       ...poolKeys,
@@ -276,7 +365,7 @@ export const getBuyTransactionInsts = async (
       bypassAssociatedCheck: false,
     },
     computeBudgetConfig: {
-      microLamports: constants.PRIORITY_RATE,
+      microLamports: config.PRIORITY_RATE,
     },
   });
 
@@ -289,7 +378,7 @@ export const getSellTransactionInsts = async (
   payer: any,
   amount: number,
   poolKeys: LiquidityPoolKeys,
-  maxLamports: number = constants.PRIORITY_RATE,
+  maxLamports: number = config.PRIORITY_RATE,
   fixedSide: "in" | "out" = "in"
 ) => {
   const directionIn = NATIVE_MINT.toString() == poolKeys.baseMint.toString();
@@ -305,7 +394,7 @@ export const getSellTransactionInsts = async (
     false
   );
   const swapToSolTransaction = await Liquidity.makeSwapInstructionSimple({
-    connection: global.get_mainnet_conn(),
+    connection: global.getMainnetConn(),
     makeTxVersion: 0,
     poolKeys: {
       ...poolKeys,
@@ -331,18 +420,11 @@ export const getSellTransactionInsts = async (
   return { instructions, amount: solAmount };
 };
 
-export const getPriorityFeeInst = () => {
-  const PRIORITY_FEE_INSTRUCTIONS = ComputeBudgetProgram.setComputeUnitPrice({
-    microLamports: constants.PRIORITY_RATE,
-  });
-  return PRIORITY_FEE_INSTRUCTIONS;
-};
-
 export const sendVersionedTransaction = async (
   tx: VersionedTransaction,
   maxRetries?: number
 ) => {
-  const txid = await global.get_mainnet_conn().sendTransaction(tx, {
+  const txid = await global.getMainnetConn().sendTransaction(tx, {
     skipPreflight: true,
     maxRetries: maxRetries,
   });
@@ -353,81 +435,9 @@ export const sendVersionedTransaction = async (
 export const simulateVersionedTransaction = async (
   tx: VersionedTransaction
 ) => {
-  const txid = await global.get_mainnet_conn().simulateTransaction(tx);
+  const txid = await global.getMainnetConn().simulateTransaction(tx);
 
   return txid;
-};
-
-const getTokenAccountByOwnerAndMint = (mint: PublicKey) => {
-  return {
-    programId: TOKEN_PROGRAM_ID,
-    pubkey: PublicKey.default,
-    accountInfo: {
-      mint: mint,
-      amount: 0,
-    },
-  } as unknown as TokenAccount;
-};
-
-const calcAmountOut = async (
-  poolKeys: LiquidityPoolKeys,
-  rawAmountIn: number,
-  swapInDirection: boolean
-) => {
-  const poolInfo = await Liquidity.fetchInfo({
-    connection: global.get_mainnet_conn(),
-    poolKeys,
-  });
-
-  let currencyInMint = poolKeys.baseMint;
-  let currencyInDecimals = poolInfo.baseDecimals;
-  let currencyOutMint = poolKeys.quoteMint;
-  let currencyOutDecimals = poolInfo.quoteDecimals;
-
-  if (!swapInDirection) {
-    currencyInMint = poolKeys.quoteMint;
-    currencyInDecimals = poolInfo.quoteDecimals;
-    currencyOutMint = poolKeys.baseMint;
-    currencyOutDecimals = poolInfo.baseDecimals;
-  }
-
-  const currencyIn = new Token(
-    TOKEN_PROGRAM_ID,
-    currencyInMint,
-    currencyInDecimals
-  );
-  const amountIn = new TokenAmount(currencyIn, rawAmountIn, false);
-  const currencyOut = new Token(
-    TOKEN_PROGRAM_ID,
-    currencyOutMint,
-    currencyOutDecimals
-  );
-  const slippage = new Percent(10, 100); // 5% slippage
-
-  const {
-    amountOut,
-    minAmountOut,
-    currentPrice,
-    executionPrice,
-    priceImpact,
-    fee,
-  } = Liquidity.computeAmountOut({
-    poolKeys,
-    poolInfo,
-    amountIn,
-    currencyOut,
-    slippage,
-  });
-
-  return {
-    amountIn,
-    amountOut,
-    minAmountOut,
-    currentPrice,
-    executionPrice,
-    priceImpact,
-    fee,
-  };
 };
 
 export const getVersionedTransaction = async (
@@ -452,18 +462,6 @@ export const getVersionedTransaction = async (
   } catch (error) {
     return await getVersionedTransaction(conn, payers, insts, lookupAddr);
   }
-};
-
-export const getTransferSOLInst = (
-  fromWallet: any,
-  toAddr: string,
-  amount: number
-) => {
-  return SystemProgram.transfer({
-    fromPubkey: fromWallet.wallet.publicKey,
-    toPubkey: new PublicKey(toAddr),
-    lamports: Math.floor(amount * LAMPORTS_PER_SOL),
-  });
 };
 
 export const getTransferTokenInst = async (

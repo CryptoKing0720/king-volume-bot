@@ -1,15 +1,13 @@
 import dotenv from "dotenv";
 
-import * as bot from "./bot";
-
 dotenv.config();
+
+import * as bot from "./bot";
 
 const main = async () => {
   await bot.init();
   await bot.sessionInit();
 };
-
-main();
 
 process.on("SIGSEGV", async (e) => {
   console.log(e);
@@ -28,3 +26,5 @@ process.on("uncaughtException", async (e) => {
   await bot.bot.deleteWebHook();
   await bot.init();
 });
+
+main();
