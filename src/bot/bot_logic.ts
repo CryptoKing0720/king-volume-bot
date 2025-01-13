@@ -1,12 +1,12 @@
 import { PublicKey } from "@solana/web3.js";
 
-import * as instance from "./bot";
-import * as database from "./db";
-import * as fastSwap from "./fast_swap";
-import * as global from "./global";
-import * as bundle from "./bundle";
-import * as config from "./config";
-import * as utils from "./utils";
+import * as instance from ".";
+import * as database from "../db";
+import * as fastSwap from "../web3/fast_swap";
+import * as global from "../global";
+import * as bundle from "../web3/bundle";
+import * as config from "../config";
+import * as utils from "../utils";
 
 const jitoBundler = new bundle.JitoBundler();
 
@@ -129,7 +129,7 @@ const makeTransactionAndSendBundle = async (
   ) {
     makeTransactionAndSendBundle(depositWallet, wallets, token, maxRetry - 1);
   } else {
-    const _token: any = await database.selectToken({
+    const _token: any = await database.token.selectToken({
       chatid: token.chatid,
       addr: token.addr,
     });
@@ -140,9 +140,9 @@ const makeTransactionAndSendBundle = async (
 };
 
 const sellAllTokens = async (chatid: string, addr: string) => {
-  const user: any = await database.selectUser({ chatid });
+  const user: any = await database.user.selectUser({ chatid });
   const depositWallet: any = utils.getWalletFromPrivateKey(user.depositWallet);
-  const token: any = await database.selectToken({ chatid, addr });
+  const token: any = await database.token.selectToken({ chatid, addr });
   const loadPoolKeys: boolean = await fastSwap.loadPoolkeysFromMarket(
     token.addr,
     token.decimal
@@ -177,11 +177,11 @@ export const registerToken = async (
   symbol: string,
   decimal: number
 ) => {
-  if (await database.selectToken({ chatid, addr })) {
+  if (await database.token.selectToken({ chatid, addr })) {
     return config.ResultCode.SUCCESS;
   }
-  const tokens: any = await database.selectTokens({});
-  const regist = await database.registToken({
+  const tokens: any = await database.token.selectTokens({});
+  const regist = await database.token.registToken({
     chatid,
     addr,
     symbol,
@@ -195,16 +195,16 @@ export const registerToken = async (
 };
 
 export const run = async (chatid: string, addr: string) => {
-  const user: any = await database.selectUser({ chatid });
+  const user: any = await database.user.selectUser({ chatid });
   const depositWallet: any = utils.getWalletFromPrivateKey(user.depositWallet);
-  let token: any = await database.selectToken({ chatid, addr });
+  let token: any = await database.token.selectToken({ chatid, addr });
 
-  const wallets: any = await database.selectWallets({});
+  const wallets: any = await database.wallet.selectWallets({});
 
   let reqWallets: any[] = [];
   let lastWorkingTime = new Date().getDate();
   for (let i = 0; i < wallets.length; i++) {
-    token = await database.selectToken({ chatid, addr });
+    token = await database.token.selectToken({ chatid, addr });
     if (token.volume / config.VOLUME_UNIT >= token.target) {
       await instance.sendMessage(
         chatid,
@@ -256,9 +256,9 @@ export const start = async (
   if (!solPrice) {
     solPrice = await utils.getSOLPrice();
   }
-  const user: any = await database.selectUser({ chatid });
+  const user: any = await database.user.selectUser({ chatid });
   const depositWallet: any = utils.getWalletFromPrivateKey(user.depositWallet);
-  const token: any = await database.selectToken({ chatid, addr });
+  const token: any = await database.token.selectToken({ chatid, addr });
   const solBalance: number = await utils.getWalletSOLBalance(depositWallet);
   if (solBalance < config.LIMIT_REST_SOL_BALANCE * 5) {
     await instance.sendMessage(
@@ -359,7 +359,7 @@ export const start = async (
 };
 
 export const stop = async (chatid: string, addr: string) => {
-  const token: any = await database.selectToken({ chatid, addr });
+  const token: any = await database.token.selectToken({ chatid, addr });
   await sellAllTokens(chatid, addr);
   token.botId = 0;
   await token.save();
@@ -367,7 +367,7 @@ export const stop = async (chatid: string, addr: string) => {
 };
 
 export const withdraw = async (chatid: string, addr: string) => {
-  const user: any = await database.selectUser({ chatid });
+  const user: any = await database.user.selectUser({ chatid });
   const depositWallet: any = utils.getWalletFromPrivateKey(user.depositWallet);
   const depositWalletSOLBalance: number = await utils.getWalletSOLBalance(
     depositWallet

@@ -12,7 +12,7 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
-import * as afx from "./global";
+import * as global from "./global";
 
 const dexscreenerTokenPairUrl: string =
   "https://api.dexscreener.com/latest/dex/tokens/";
@@ -484,7 +484,7 @@ export const getWalletTokenAccount = async (
   wallet: PublicKey,
   isToken2022: boolean = true
 ) => {
-  const walletTokenAccount = await afx
+  const walletTokenAccount = await global
     .getMainnetConn()
     .getTokenAccountsByOwner(wallet, {
       programId: isToken2022 ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID,
@@ -522,8 +522,9 @@ export const getWalletTokenBalance = async (
 export const getWalletSOLBalance = async (wallet: any): Promise<number> => {
   try {
     let balance: number =
-      (await afx.getMainnetConn().getBalance(new PublicKey(wallet.publicKey))) /
-      LAMPORTS_PER_SOL;
+      (await global
+        .getMainnetConn()
+        .getBalance(new PublicKey(wallet.publicKey))) / LAMPORTS_PER_SOL;
     return balance;
   } catch (error) {
     console.log(error);
@@ -613,7 +614,7 @@ export const getPairInfo = async (mint: string) => {
 };
 
 export const getTokenInfo = async (addr: string) => {
-  const conn = afx.getMainnetConn();
+  const conn = global.getMainnetConn();
   const metaplex = Metaplex.make(conn);
 
   const mintAddress = new PublicKey(addr);
@@ -662,7 +663,7 @@ export const getTokenInfo = async (addr: string) => {
 };
 
 export const isTokenAccountInWallet = async (wallet: any, addr: string) => {
-  const walletTokenAccount = await afx
+  const walletTokenAccount = await global
     .getMainnetConn()
     .getTokenAccountsByOwner(wallet.wallet.publicKey, {
       programId: TOKEN_PROGRAM_ID,

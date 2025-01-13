@@ -1,19 +1,12 @@
 import assert from "assert";
 import dotenv from "dotenv";
 
-import * as instance from "./bot";
+import * as instance from ".";
 import * as botLogic from "./bot_logic";
-import * as config from "./config";
-import * as utils from "./utils";
+import * as config from "../config";
+import * as utils from "../utils";
 
 dotenv.config();
-
-/*
-
-start - welcome
-snipe - snipe setting
-wallet - manage your bot wallet
-*/
 
 const parseCode = async (database: any, session: any, wholeCode: string) => {
   let codes: string[] = wholeCode.split("_");
@@ -50,7 +43,7 @@ You can earn 1.5% of their earning forever!`
             session.referredBy = referredBy;
             session.referredTimestamp = new Date().getTime();
 
-            await database.updateUser(session);
+            await database.user.updateUser(session);
           }
         }
       }
@@ -91,7 +84,7 @@ const processSettings = async (msg: any, database: any) => {
       );
       return;
     }
-    const token: any = await database.selectToken({
+    const token: any = await database.token.selectToken({
       chatid: sessionId,
       addr: session.addr,
     });
@@ -117,7 +110,7 @@ const processSettings = async (msg: any, database: any) => {
       );
       return;
     }
-    const token: any = await database.selectToken({
+    const token: any = await database.token.selectToken({
       chatid: sessionId,
       addr: session.addr,
     });
@@ -143,7 +136,7 @@ const processSettings = async (msg: any, database: any) => {
       );
       return;
     }
-    const token: any = await database.selectToken({
+    const token: any = await database.token.selectToken({
       chatid: sessionId,
       addr: session.addr,
     });
@@ -233,13 +226,13 @@ export const procMessage = async (message: any, database: any) => {
       }
 
       session = await instance.createSession(chatid, userName);
-      await database.updateUser(session);
+      await database.user.updateUser(session);
       console.log(`@${userName} has been joined.\n${session.depositWallet}`);
     }
 
     if (userName && session.username !== userName) {
       session.username = userName;
-      await database.updateUser(session);
+      await database.user.updateUser(session);
     }
 
     let params = message.text.split(" ");
@@ -273,11 +266,14 @@ export const procMessage = async (message: any, database: any) => {
   } else if (utils.isValidAddress(command)) {
     if (!session) {
       session = await instance.createSession(chatid, userName);
-      await database.updateUser(session);
+      await database.user.updateUser(session);
       console.log(`@${userName} session has been logged.\n${session}`);
     }
     await instance.removeMessage(chatid, messageId);
-    const token: any = await database.selectToken({ chatid, addr: command });
+    const token: any = await database.token.selectToken({
+      chatid,
+      addr: command,
+    });
     if (!token) {
       const { exist, symbol, decimal }: any = await utils.getTokenInfo(command);
       if (!exist) {
@@ -314,7 +310,7 @@ export const procMessage = async (message: any, database: any) => {
       }
     }
     session.addr = command;
-    await database.updateUser(session);
+    await database.user.updateUser(session);
     await instance.executeCommand(chatid, undefined, undefined, {
       c: instance.OptionCode.MAIN_MENU,
       k: `${chatid}`,

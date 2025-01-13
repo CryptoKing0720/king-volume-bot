@@ -7,8 +7,6 @@ dotenv.config();
 
 let connections: Connection[] = [];
 
-export const PAYMENT_ADDRESS = process.env.PAYMENT_ADDRESS;
-
 export const rankingEmojis = [
   "1️⃣",
   "2️⃣",

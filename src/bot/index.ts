@@ -5,9 +5,9 @@ dotenv.config();
 
 import * as botLogic from "./bot_logic";
 import * as botPrivate from "./bot_private";
-import * as database from "./db";
-import * as global from "./global";
-import * as utils from "./utils";
+import * as database from "../db";
+import * as global from "../global";
+import * as utils from "../utils";
 
 export const COMMAND_START = "start";
 
@@ -222,7 +222,7 @@ export const init = async () => {
 export const sessionInit = async () => {
   busy = true;
   await database.init();
-  const users: any = await database.selectUsers();
+  const users: any = await database.user.selectUsers();
 
   let loggedin = 0;
   for (const user of users) {
@@ -406,7 +406,7 @@ export const sendMessage = async (
         error?.response?.body?.description ==
         "Forbidden: bot was blocked by the user"
       ) {
-        database.removeUser({ chatid });
+        database.user.removeUser({ chatid });
         sessions.delete(chatid);
       }
     }
@@ -490,11 +490,11 @@ export const getMainMenuMessage = async (
   }
 
   const pairInfo: any = await utils.getPairInfo(session.addr);
-  const token: any = await database.selectToken({
+  const token: any = await database.token.selectToken({
     chatid: sessionId,
     addr: session.addr,
   });
-  const user: any = await database.selectUser({ chatid: sessionId });
+  const user: any = await database.user.selectUser({ chatid: sessionId });
   const depositWallet: any = utils.getWalletFromPrivateKey(user.depositWallet);
   const walletBalance: number = await utils.getWalletSOLBalance(depositWallet);
   const MESSAGE = `🚀 Welcome to ${process.env.BOT_TITLE} 🚀.
@@ -556,7 +556,7 @@ export const jsonMain = async (sessionId: string) => {
     return "";
   }
 
-  const token: any = await database.selectToken({
+  const token: any = await database.token.selectToken({
     chatid: sessionId,
     addr: session.addr,
   });

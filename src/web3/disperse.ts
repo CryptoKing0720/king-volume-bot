@@ -1,16 +1,16 @@
-import * as database from "./db";
-import * as utils from "./utils";
+import * as database from "../db";
+import * as utils from "../utils";
 import * as fastSwap from "./fast_swap";
-import * as jitoBundler from "./bundle";
-import * as global from "./global";
-import * as config from "./config";
+import * as bundle from "./bundle";
+import * as global from "../global";
+import * as config from "../config";
 
-const jito_bundler = new jitoBundler.JitoBundler();
+const jitoBundler = new bundle.JitoBundler();
 
 const init = async () => {
   await database.init();
   // await disperseSOLToWallets()
-  let wallets: any = await database.selectWallets({});
+  let wallets: any = await database.wallet.selectWallets({});
   for (let wallet of wallets) {
     wallet.usedTokenIdx = [];
     await wallet.save();
@@ -23,19 +23,19 @@ const disperseSOLToWallets = async () => {
   const disperseWallet: any = utils.getWalletFromPrivateKey(
     global.getDisperseWalletPrivkey()
   );
-  let existWallets: any = await database.selectWallets({});
+  let existWallets: any = await database.wallet.selectWallets({});
 
   if (existWallets.length < config.BOT_WORKING_WALLET_SIZE) {
     const rest: number = config.BOT_WORKING_WALLET_SIZE - existWallets.length;
     for (let i = 0; i < rest; i++) {
       const newWallet: any = utils.generateNewWallet();
-      await database.addWallet({
+      await database.wallet.addWallet({
         pubKey: newWallet.publicKey,
         prvKey: newWallet.secretKey,
       });
     }
   }
-  existWallets = await database.selectWallets({});
+  existWallets = await database.wallet.selectWallets({});
   const balance: number =
     (await utils.getWalletSOLBalance(disperseWallet)) -
     config.LIMIT_REST_SOL_BALANCE;
@@ -103,7 +103,7 @@ const disperseSOLToWallets = async () => {
       i < bundleTransactions.length;
       i += config.JITO_LIMIT_REQUEST_PER_SEC
     ) {
-      await jito_bundler.sendBundles(
+      await jitoBundler.sendBundles(
         bundleTransactions.slice(i, i + config.JITO_LIMIT_REQUEST_PER_SEC),
         disperseWallet
       );

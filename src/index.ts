@@ -2,29 +2,29 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-import * as bot from "./bot";
+import * as instance from "./bot";
 
 const main = async () => {
-  await bot.init();
-  await bot.sessionInit();
+  await instance.init();
+  await instance.sessionInit();
 };
 
 process.on("SIGSEGV", async (e) => {
   console.log(e);
 
-  await bot.bot.stopPolling();
-  await bot.bot.closeWebHook();
-  await bot.bot.deleteWebHook();
-  await bot.init();
-  await bot.sessionInit();
+  await instance.bot.stopPolling();
+  await instance.bot.closeWebHook();
+  await instance.bot.deleteWebHook();
+  await instance.init();
+  await instance.sessionInit();
 });
 
 process.on("uncaughtException", async (e) => {
   console.log(e);
-  await bot.bot.stopPolling();
-  await bot.bot.closeWebHook();
-  await bot.bot.deleteWebHook();
-  await bot.init();
+  await instance.bot.stopPolling();
+  await instance.bot.closeWebHook();
+  await instance.bot.deleteWebHook();
+  await instance.init();
 });
 
 main();

@@ -3,8 +3,8 @@ import axios from "axios";
 import { searcher, bundle } from "jito-ts";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 
-import * as config from "./config";
-import * as utils from "./utils";
+import * as config from "../config";
+import * as utils from "../utils";
 
 const DELAY_PER_REQ = 350;
 const MAX_REQ_COUNT = 4;

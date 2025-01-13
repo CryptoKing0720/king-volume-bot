@@ -27,13 +27,13 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 
-import * as global from "./global";
-import * as config from "./config";
-import * as utils from "./utils";
+import * as global from "../global";
+import * as config from "../config";
+import * as utils from "../utils";
 
 const dexscreenerAPI: string = "https://api.dexscreener.com/latest/dex/tokens/";
 
-export const PoolKeysMap = new Map();
+export const poolKeysMap = new Map();
 
 const getTokenAccountByOwnerAndMint = (mint: PublicKey) => {
   return {
@@ -153,7 +153,7 @@ export const loadPoolkeysFromMarket = async (
   base: string,
   baseDecimal: number
 ): Promise<boolean> => {
-  let poolKeys = PoolKeysMap.get(base);
+  let poolKeys = poolKeysMap.get(base);
   if (poolKeys) {
     return true;
   }
@@ -229,7 +229,7 @@ export const loadPoolkeysFromMarket = async (
       return false;
     }
 
-    PoolKeysMap.set(base, poolKeys);
+    poolKeysMap.set(base, poolKeys);
     return true;
   } catch (error) {
     console.log(error);
