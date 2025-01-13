@@ -1,7 +1,4 @@
-import {
-  Market,
-  MARKET_STATE_LAYOUT_V3,
-} from '@project-serum/serum';
+import { Market, MARKET_STATE_LAYOUT_V3 } from "@project-serum/serum";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   Liquidity,
@@ -12,13 +9,13 @@ import {
   TOKEN_PROGRAM_ID,
   TokenAccount,
   TokenAmount,
-} from '@raydium-io/raydium-sdk';
+} from "@raydium-io/raydium-sdk";
 import {
   createAssociatedTokenAccountInstruction,
   createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
   NATIVE_MINT,
-} from '@solana/spl-token';
+} from "@solana/spl-token";
 import {
   AddressLookupTableProgram,
   ComputeBudgetProgram,
@@ -31,50 +28,53 @@ import {
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
-} from '@solana/web3.js';
+} from "@solana/web3.js";
 
-import * as global from './global';
-import * as constants from './uniconst';
-import * as utils from './utils';
+import * as global from "./global";
+import * as constants from "./uniconst";
+import * as utils from "./utils";
 
-export const PoolKeysMap = new Map()
+export const PoolKeysMap = new Map();
 
-const dexscreenerAPI: string = "https://api.dexscreener.com/latest/dex/tokens/"
+const dexscreenerAPI: string = "https://api.dexscreener.com/latest/dex/tokens/";
 
-export const loadPoolKeys_from_market = async (base: string, baseDecimal: number): Promise<boolean> => {
-  let poolKeys = PoolKeysMap.get(base)
+export const loadPoolKeys_from_market = async (
+  base: string,
+  baseDecimal: number
+): Promise<boolean> => {
+  let poolKeys = PoolKeysMap.get(base);
   if (poolKeys) {
-    return true
+    return true;
   }
 
-  let raydiumPairAddr: string = ""
+  let raydiumPairAddr: string = "";
   try {
-    const data = await utils.fetchAPI(dexscreenerAPI + base, "GET")
+    const data = await utils.fetchAPI(dexscreenerAPI + base, "GET");
     for (let pair of data.pairs) {
       if (pair.labels && pair.labels.length) {
-        continue
+        continue;
       }
       if (pair.chainId == "solana" && pair.dexId == "raydium") {
-        raydiumPairAddr = pair.pairAddress
-        break
+        raydiumPairAddr = pair.pairAddress;
+        break;
       }
     }
     if (raydiumPairAddr == "") {
-      return false
+      return false;
     }
   } catch (error) {
-    return false
+    return false;
   }
 
-  const conn = global.get_mainnet_conn()
+  const conn = global.get_mainnet_conn();
   try {
-    let direction: boolean = true
+    let direction: boolean = true;
     let poolIds: any[] = await Market.findAccountsByMints(
       conn,
       new PublicKey(base),
       NATIVE_MINT,
       MAINNET_PROGRAM_ID.OPENBOOK_MARKET
-    )
+    );
 
     if (!poolIds.length) {
       poolIds = await Market.findAccountsByMints(
@@ -82,14 +82,13 @@ export const loadPoolKeys_from_market = async (base: string, baseDecimal: number
         NATIVE_MINT,
         new PublicKey(base),
         MAINNET_PROGRAM_ID.OPENBOOK_MARKET
-      )
-      direction = false
+      );
+      direction = false;
     }
 
     for (let poolId of poolIds) {
-
-      const marketId = poolId.publicKey
-      const accountInfo = poolId.accountInfo
+      const marketId = poolId.publicKey;
+      const accountInfo = poolId.accountInfo;
       const marketInfo = MARKET_STATE_LAYOUT_V3.decode(accountInfo.data);
       poolKeys = Liquidity.getAssociatedPoolKeys({
         version: 4,
@@ -103,31 +102,34 @@ export const loadPoolKeys_from_market = async (base: string, baseDecimal: number
         marketProgramId: MAINNET_PROGRAM_ID.OPENBOOK_MARKET,
       });
       if (poolKeys.id.toString() != raydiumPairAddr) {
-        await utils.sleep(100)
-        poolKeys = null
-        continue
+        await utils.sleep(100);
+        poolKeys = null;
+        continue;
       }
       poolKeys.marketBaseVault = marketInfo.baseVault;
       poolKeys.marketQuoteVault = marketInfo.quoteVault;
       poolKeys.marketBids = marketInfo.bids;
       poolKeys.marketAsks = marketInfo.asks;
       poolKeys.marketEventQueue = marketInfo.eventQueue;
-      break
+      break;
     }
 
     if (!poolKeys) {
-      return false
+      return false;
     }
 
-    PoolKeysMap.set(base, poolKeys)
-    return true
+    PoolKeysMap.set(base, poolKeys);
+    return true;
   } catch (error) {
     console.log(error);
   }
-  return false
-}
-export const getCreateLookUpTableTransaction = async (payer: any, poolKeys: any) => {
-  const conn = global.get_mainnet_conn()
+  return false;
+};
+export const getCreateLookUpTableTransaction = async (
+  payer: any,
+  poolKeys: any
+) => {
+  const conn = global.get_mainnet_conn();
   const slot = await conn.getSlot();
   const [lookupTableInst, lookupTableAddress] =
     AddressLookupTableProgram.createLookupTable({
@@ -194,7 +196,7 @@ export const getCreateLookUpTableTransaction = async (payer: any, poolKeys: any)
     ],
   });
 
-  const recentBlockhash = await conn.getLatestBlockhash("finalized")
+  const recentBlockhash = await conn.getLatestBlockhash("finalized");
 
   const versionedTransaction1 = new VersionedTransaction(
     new TransactionMessage({
@@ -202,20 +204,27 @@ export const getCreateLookUpTableTransaction = async (payer: any, poolKeys: any)
       recentBlockhash: recentBlockhash.blockhash,
       instructions: [lookupTableInst, extendInstruction],
     }).compileToV0Message()
-  )
-  versionedTransaction1.sign([payer.wallet])
+  );
+  versionedTransaction1.sign([payer.wallet]);
   const versionedTransaction2 = new VersionedTransaction(
     new TransactionMessage({
       payerKey: payer.wallet.publicKey,
       recentBlockhash: recentBlockhash.blockhash,
       instructions: [extraExtendInstruction],
     }).compileToV0Message()
-  )
-  versionedTransaction2.sign([payer.wallet])
-  return { transactions: [versionedTransaction1, versionedTransaction2], address: lookupTableAddress }
-}
+  );
+  versionedTransaction2.sign([payer.wallet]);
+  return {
+    transactions: [versionedTransaction1, versionedTransaction2],
+    address: lookupTableAddress,
+  };
+};
 
-export const getCreateAccountTransactionInst = (payer: any, wallet: any, addr: string) => {
+export const getCreateAccountTransactionInst = (
+  payer: any,
+  wallet: any,
+  addr: string
+) => {
   const associatedToken = getAssociatedTokenAddressSync(
     new PublicKey(addr),
     wallet.wallet.publicKey,
@@ -231,21 +240,25 @@ export const getCreateAccountTransactionInst = (payer: any, wallet: any, addr: s
     new PublicKey(addr),
     TOKEN_PROGRAM_ID,
     ASSOCIATED_TOKEN_PROGRAM_ID
-  )
-}
+  );
+};
 
 export const getBuyTransactionInsts = async (
   wallet: any,
   amount: number,
-  poolKeys: LiquidityPoolKeys,
+  poolKeys: LiquidityPoolKeys
 ) => {
-  const fixedSide: 'in' | 'out' = 'in'
+  const fixedSide: "in" | "out" = "in";
 
-  const directionIn = NATIVE_MINT.toString() == poolKeys.baseMint.toString()
+  const directionIn = NATIVE_MINT.toString() == poolKeys.baseMint.toString();
 
-  const { minAmountOut: tokenMinAmount, amountIn: solAmountIn } = await calcAmountOut(poolKeys, amount, directionIn)
+  const { minAmountOut: tokenMinAmount, amountIn: solAmountIn } =
+    await calcAmountOut(poolKeys, amount, directionIn);
 
-  const userTokenAccounts = await utils.getWalletTokenAccount(wallet.wallet.publicKey, false)
+  const userTokenAccounts = await utils.getWalletTokenAccount(
+    wallet.wallet.publicKey,
+    false
+  );
   const swapToTokenTransaction = await Liquidity.makeSwapInstructionSimple({
     connection: global.get_mainnet_conn(),
     makeTxVersion: 0,
@@ -265,24 +278,32 @@ export const getBuyTransactionInsts = async (
     computeBudgetConfig: {
       microLamports: constants.PRIORITY_RATE,
     },
-  })
+  });
 
-  const instructions = swapToTokenTransaction.innerTransactions[0].instructions.filter(Boolean)
-  return { instructions, amount: tokenMinAmount }
-}
+  const instructions =
+    swapToTokenTransaction.innerTransactions[0].instructions.filter(Boolean);
+  return { instructions, amount: tokenMinAmount };
+};
 
 export const getSellTransactionInsts = async (
   payer: any,
   amount: number,
   poolKeys: LiquidityPoolKeys,
   maxLamports: number = constants.PRIORITY_RATE,
-  fixedSide: 'in' | 'out' = 'in'
+  fixedSide: "in" | "out" = "in"
 ) => {
-  const directionIn = NATIVE_MINT.toString() == poolKeys.baseMint.toString()
+  const directionIn = NATIVE_MINT.toString() == poolKeys.baseMint.toString();
 
-  const { amountOut: solAmount, minAmountOut: solMinAmount, amountIn: tokenAmountIn } = await calcAmountOut(poolKeys, amount, !directionIn)
+  const {
+    amountOut: solAmount,
+    minAmountOut: solMinAmount,
+    amountIn: tokenAmountIn,
+  } = await calcAmountOut(poolKeys, amount, !directionIn);
 
-  const userTokenAccounts = await utils.getWalletTokenAccount(payer.wallet.publicKey, false)
+  const userTokenAccounts = await utils.getWalletTokenAccount(
+    payer.wallet.publicKey,
+    false
+  );
   const swapToSolTransaction = await Liquidity.makeSwapInstructionSimple({
     connection: global.get_mainnet_conn(),
     makeTxVersion: 0,
@@ -302,32 +323,40 @@ export const getSellTransactionInsts = async (
     computeBudgetConfig: {
       microLamports: maxLamports,
     },
-  })
+  });
 
-  const instructions = swapToSolTransaction.innerTransactions[0].instructions.filter(Boolean)
+  const instructions =
+    swapToSolTransaction.innerTransactions[0].instructions.filter(Boolean);
 
-  return { instructions, amount: solAmount }
-}
+  return { instructions, amount: solAmount };
+};
 
 export const getPriorityFeeInst = () => {
-  const PRIORITY_FEE_INSTRUCTIONS = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: constants.PRIORITY_RATE })
-  return PRIORITY_FEE_INSTRUCTIONS
-}
+  const PRIORITY_FEE_INSTRUCTIONS = ComputeBudgetProgram.setComputeUnitPrice({
+    microLamports: constants.PRIORITY_RATE,
+  });
+  return PRIORITY_FEE_INSTRUCTIONS;
+};
 
-export const sendVersionedTransaction = async (tx: VersionedTransaction, maxRetries?: number) => {
+export const sendVersionedTransaction = async (
+  tx: VersionedTransaction,
+  maxRetries?: number
+) => {
   const txid = await global.get_mainnet_conn().sendTransaction(tx, {
     skipPreflight: true,
     maxRetries: maxRetries,
-  })
+  });
 
-  return txid
-}
+  return txid;
+};
 
-export const simulateVersionedTransaction = async (tx: VersionedTransaction) => {
-  const txid = await global.get_mainnet_conn().simulateTransaction(tx)
+export const simulateVersionedTransaction = async (
+  tx: VersionedTransaction
+) => {
+  const txid = await global.get_mainnet_conn().simulateTransaction(tx);
 
-  return txid
-}
+  return txid;
+};
 
 const getTokenAccountByOwnerAndMint = (mint: PublicKey) => {
   return {
@@ -337,37 +366,58 @@ const getTokenAccountByOwnerAndMint = (mint: PublicKey) => {
       mint: mint,
       amount: 0,
     },
-  } as unknown as TokenAccount
-}
+  } as unknown as TokenAccount;
+};
 
+const calcAmountOut = async (
+  poolKeys: LiquidityPoolKeys,
+  rawAmountIn: number,
+  swapInDirection: boolean
+) => {
+  const poolInfo = await Liquidity.fetchInfo({
+    connection: global.get_mainnet_conn(),
+    poolKeys,
+  });
 
-const calcAmountOut = async (poolKeys: LiquidityPoolKeys, rawAmountIn: number, swapInDirection: boolean) => {
-  const poolInfo = await Liquidity.fetchInfo({ connection: global.get_mainnet_conn(), poolKeys })
-
-  let currencyInMint = poolKeys.baseMint
-  let currencyInDecimals = poolInfo.baseDecimals
-  let currencyOutMint = poolKeys.quoteMint
-  let currencyOutDecimals = poolInfo.quoteDecimals
+  let currencyInMint = poolKeys.baseMint;
+  let currencyInDecimals = poolInfo.baseDecimals;
+  let currencyOutMint = poolKeys.quoteMint;
+  let currencyOutDecimals = poolInfo.quoteDecimals;
 
   if (!swapInDirection) {
-    currencyInMint = poolKeys.quoteMint
-    currencyInDecimals = poolInfo.quoteDecimals
-    currencyOutMint = poolKeys.baseMint
-    currencyOutDecimals = poolInfo.baseDecimals
+    currencyInMint = poolKeys.quoteMint;
+    currencyInDecimals = poolInfo.quoteDecimals;
+    currencyOutMint = poolKeys.baseMint;
+    currencyOutDecimals = poolInfo.baseDecimals;
   }
 
-  const currencyIn = new Token(TOKEN_PROGRAM_ID, currencyInMint, currencyInDecimals)
-  const amountIn = new TokenAmount(currencyIn, rawAmountIn, false)
-  const currencyOut = new Token(TOKEN_PROGRAM_ID, currencyOutMint, currencyOutDecimals)
-  const slippage = new Percent(10, 100) // 5% slippage
+  const currencyIn = new Token(
+    TOKEN_PROGRAM_ID,
+    currencyInMint,
+    currencyInDecimals
+  );
+  const amountIn = new TokenAmount(currencyIn, rawAmountIn, false);
+  const currencyOut = new Token(
+    TOKEN_PROGRAM_ID,
+    currencyOutMint,
+    currencyOutDecimals
+  );
+  const slippage = new Percent(10, 100); // 5% slippage
 
-  const { amountOut, minAmountOut, currentPrice, executionPrice, priceImpact, fee } = Liquidity.computeAmountOut({
+  const {
+    amountOut,
+    minAmountOut,
+    currentPrice,
+    executionPrice,
+    priceImpact,
+    fee,
+  } = Liquidity.computeAmountOut({
     poolKeys,
     poolInfo,
     amountIn,
     currencyOut,
     slippage,
-  })
+  });
 
   return {
     amountIn,
@@ -377,13 +427,17 @@ const calcAmountOut = async (poolKeys: LiquidityPoolKeys, rawAmountIn: number, s
     executionPrice,
     priceImpact,
     fee,
-  }
-}
+  };
+};
 
-
-export const getVersionedTransaction = async (conn: Connection | any, payers: any[], insts: any[], lookupAddr: any): Promise<any> => {
+export const getVersionedTransaction = async (
+  conn: Connection | any,
+  payers: any[],
+  insts: any[],
+  lookupAddr: any
+): Promise<any> => {
   try {
-    const recentBlockhashForSwap = await conn.getLatestBlockhash("finalized")
+    const recentBlockhashForSwap = await conn.getLatestBlockhash("finalized");
 
     const versionedTransaction = new VersionedTransaction(
       new TransactionMessage({
@@ -391,25 +445,33 @@ export const getVersionedTransaction = async (conn: Connection | any, payers: an
         recentBlockhash: recentBlockhashForSwap.blockhash,
         instructions: insts,
       }).compileToV0Message(lookupAddr ? [lookupAddr] : [])
-    )
-    versionedTransaction.sign(payers)
+    );
+    versionedTransaction.sign(payers);
 
-    return versionedTransaction
+    return versionedTransaction;
   } catch (error) {
-    return await getVersionedTransaction(conn, payers, insts, lookupAddr)
+    return await getVersionedTransaction(conn, payers, insts, lookupAddr);
   }
-}
+};
 
-export const getTransferSOLInst = (fromWallet: any, toAddr: string, amount: number) => {
+export const getTransferSOLInst = (
+  fromWallet: any,
+  toAddr: string,
+  amount: number
+) => {
   return SystemProgram.transfer({
     fromPubkey: fromWallet.wallet.publicKey,
     toPubkey: new PublicKey(toAddr),
     lamports: Math.floor(amount * LAMPORTS_PER_SOL),
-  })
-}
+  });
+};
 
-export const getTransferTokenInst = async (fromWallet: any, toAddr: string, token: any, amount: number) => {
-
+export const getTransferTokenInst = async (
+  fromWallet: any,
+  toAddr: string,
+  token: any,
+  amount: number
+) => {
   return createTransferCheckedInstruction(
     fromWallet.wallet.publicKey,
     new PublicKey(token.addr),
@@ -418,6 +480,6 @@ export const getTransferTokenInst = async (fromWallet: any, toAddr: string, toke
     Math.floor(amount * Math.pow(10, token.decimal)),
     token.decimal,
     [],
-    TOKEN_PROGRAM_ID)
+    TOKEN_PROGRAM_ID
+  );
 };
-

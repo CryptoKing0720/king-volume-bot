@@ -1,635 +1,675 @@
-import assert from 'assert';
-import axios from 'axios';
-import * as bip39 from 'bip39';
-import base58 from 'bs58';
-import * as dotenv from 'dotenv';
-import EventEmitter from 'events';
-import * as fs from 'fs';
+import assert from "assert";
+import axios from "axios";
+import * as bip39 from "bip39";
+import base58 from "bs58";
+import * as dotenv from "dotenv";
+import EventEmitter from "events";
+import * as fs from "fs";
 
-import { Metaplex } from '@metaplex-foundation/js';
-import { SPL_ACCOUNT_LAYOUT } from '@raydium-io/raydium-sdk';
-import {
-    TOKEN_2022_PROGRAM_ID,
-    TOKEN_PROGRAM_ID,
-} from '@solana/spl-token';
-import {
-    ENV,
-    TokenListProvider,
-} from '@solana/spl-token-registry';
-import {
-    Keypair,
-    LAMPORTS_PER_SOL,
-    PublicKey,
-} from '@solana/web3.js';
+import { Metaplex } from "@metaplex-foundation/js";
+import { SPL_ACCOUNT_LAYOUT } from "@raydium-io/raydium-sdk";
+import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { ENV, TokenListProvider } from "@solana/spl-token-registry";
+import { Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 
-import * as afx from './global';
+import * as afx from "./global";
 
-dotenv.config()
-
+dotenv.config();
 
 export const getSOLPrice = async (): Promise<number> => {
-    try {
-        const { solana } = await fetchAPI("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", "GET")
-        return solana.usd as number
-    } catch (error) {
-        await sleep(200)
-        return getSOLPrice()
-    }
-}
+  try {
+    const { solana } = await fetchAPI(
+      "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+      "GET"
+    );
+    return solana.usd as number;
+  } catch (error) {
+    await sleep(200);
+    return getSOLPrice();
+  }
+};
 
-const dexscreenerTokenPairUrl: string = "https://api.dexscreener.com/latest/dex/tokens/"
+const dexscreenerTokenPairUrl: string =
+  "https://api.dexscreener.com/latest/dex/tokens/";
 
 export const getPairInfo = async (mint: string) => {
-    const result: any = {}
-    const data = await fetchAPI(dexscreenerTokenPairUrl + mint, "GET")
-    if (data && data.pairs) {
-        for (let pair of data.pairs) {
-            if (pair.chainId == "solana" && pair.dexId == "raydium") {
-                result.dex = pair.dexId
-                result.pair = pair.baseToken.symbol + " / " + pair.quoteToken.symbol
-                result.price = pair.priceUsd + "$ / " + pair.priceChange.m5 + '%'
-                result.trx5m = (pair.txns.m5.buys as number + pair.txns.m5.sells as number) + ' (' + pair.txns.m5.buys + ' buys/' + pair.txns.m5.sells + ' sells)'
-                result.trx1h = (pair.txns.h1.buys as number + pair.txns.h1.sells as number) + ' (' + pair.txns.h1.buys + ' buys/' + pair.txns.h1.sells + ' sells)'
-                result.trx6h = (pair.txns.h6.buys as number + pair.txns.h6.sells as number) + ' (' + pair.txns.h6.buys + ' buys/' + pair.txns.h6.sells + ' sells)'
-                result.trx24h = (pair.txns.h24.buys as number + pair.txns.h24.sells as number) + ' (' + pair.txns.h24.buys + ' buys/' + pair.txns.h24.sells + ' sells)'
-                result.volume5m = roundBigUnit(pair.volume.m5, 2)
-                result.volume1h = roundBigUnit(pair.volume.h1, 2)
-                result.volume6h = roundBigUnit(pair.volume.h6, 2)
-                result.volume24h = roundBigUnit(pair.volume.h24, 2)
-                result.lp = roundBigUnit(pair.liquidity.usd, 2)
-                result.mc = roundBigUnit(pair.fdv, 2)
-                if (pair?.info?.websites?.length > 0) {
-                    result.socials = {
-                        website: pair?.info?.websites[0]?.url,
-                    }
-                }
-
-                if (pair?.info?.socials?.length > 0) {
-                    for (let social of pair.info.socials) {
-                        if (social.type === "telegram") {
-                            result.socials = { telegram: social.url, ...result.socials }
-                        } else if (social.type === 'twitter') {
-                            result.socials = { twitter: social.url, ...result.socials }
-                        } else if (social.type === 'discord') {
-                            result.socials = { discord: social.url, ...result.socials }
-                        }
-                    }
-                }
-                return result
-            }
+  const result: any = {};
+  const data = await fetchAPI(dexscreenerTokenPairUrl + mint, "GET");
+  if (data && data.pairs) {
+    for (let pair of data.pairs) {
+      if (pair.chainId == "solana" && pair.dexId == "raydium") {
+        result.dex = pair.dexId;
+        result.pair = pair.baseToken.symbol + " / " + pair.quoteToken.symbol;
+        result.price = pair.priceUsd + "$ / " + pair.priceChange.m5 + "%";
+        result.trx5m =
+          (((pair.txns.m5.buys as number) + pair.txns.m5.sells) as number) +
+          " (" +
+          pair.txns.m5.buys +
+          " buys/" +
+          pair.txns.m5.sells +
+          " sells)";
+        result.trx1h =
+          (((pair.txns.h1.buys as number) + pair.txns.h1.sells) as number) +
+          " (" +
+          pair.txns.h1.buys +
+          " buys/" +
+          pair.txns.h1.sells +
+          " sells)";
+        result.trx6h =
+          (((pair.txns.h6.buys as number) + pair.txns.h6.sells) as number) +
+          " (" +
+          pair.txns.h6.buys +
+          " buys/" +
+          pair.txns.h6.sells +
+          " sells)";
+        result.trx24h =
+          (((pair.txns.h24.buys as number) + pair.txns.h24.sells) as number) +
+          " (" +
+          pair.txns.h24.buys +
+          " buys/" +
+          pair.txns.h24.sells +
+          " sells)";
+        result.volume5m = roundBigUnit(pair.volume.m5, 2);
+        result.volume1h = roundBigUnit(pair.volume.h1, 2);
+        result.volume6h = roundBigUnit(pair.volume.h6, 2);
+        result.volume24h = roundBigUnit(pair.volume.h24, 2);
+        result.lp = roundBigUnit(pair.liquidity.usd, 2);
+        result.mc = roundBigUnit(pair.fdv, 2);
+        if (pair?.info?.websites?.length > 0) {
+          result.socials = {
+            website: pair?.info?.websites[0]?.url,
+          };
         }
+
+        if (pair?.info?.socials?.length > 0) {
+          for (let social of pair.info.socials) {
+            if (social.type === "telegram") {
+              result.socials = { telegram: social.url, ...result.socials };
+            } else if (social.type === "twitter") {
+              result.socials = { twitter: social.url, ...result.socials };
+            } else if (social.type === "discord") {
+              result.socials = { discord: social.url, ...result.socials };
+            }
+          }
+        }
+        return result;
+      }
     }
-    return result
-}
+  }
+  return result;
+};
 
 export const getTokenInfo = async (addr: string) => {
-    const conn = afx.get_mainnet_conn()
-    const metaplex = Metaplex.make(conn);
+  const conn = afx.get_mainnet_conn();
+  const metaplex = Metaplex.make(conn);
 
-    const mintAddress = new PublicKey(addr);
+  const mintAddress = new PublicKey(addr);
 
-    const metadataAccount = metaplex
-        .nfts()
-        .pdas()
-        .metadata({ mint: mintAddress });
+  const metadataAccount = metaplex
+    .nfts()
+    .pdas()
+    .metadata({ mint: mintAddress });
 
-    const metadataAccountInfo = await conn.getAccountInfo(metadataAccount);
+  const metadataAccountInfo = await conn.getAccountInfo(metadataAccount);
 
-    if (metadataAccountInfo) {
-        const token = await metaplex
-            .nfts()
-            .findByMint({ mintAddress: mintAddress });
-        if (token) {
-            return { exist: true, symbol: token.mint.currency.symbol, decimal: token.mint.currency.decimals }
-        } else {
-            return { exist: false, symbol: "", decimal: 0 }
-        }
+  if (metadataAccountInfo) {
+    const token = await metaplex
+      .nfts()
+      .findByMint({ mintAddress: mintAddress });
+    if (token) {
+      return {
+        exist: true,
+        symbol: token.mint.currency.symbol,
+        decimal: token.mint.currency.decimals,
+      };
     } else {
-        const provider = await new TokenListProvider().resolve();
-        const tokenList = provider.filterByChainId(ENV.MainnetBeta).getList();
-        console.log(tokenList);
-        const tokenMap = tokenList.reduce((map, item) => {
-            map.set(item.address, item);
-            return map;
-        }, new Map());
-
-        const token = tokenMap.get(mintAddress.toBase58());
-
-        if (token) {
-            return { exist: true, symbol: token.mint.currency.symbol, decimal: token.mint.currency.decimals }
-        } else {
-            return { exist: false, symbol: "", decimal: 0 }
-        }
+      return { exist: false, symbol: "", decimal: 0 };
     }
-}
+  } else {
+    const provider = await new TokenListProvider().resolve();
+    const tokenList = provider.filterByChainId(ENV.MainnetBeta).getList();
+    console.log(tokenList);
+    const tokenMap = tokenList.reduce((map, item) => {
+      map.set(item.address, item);
+      return map;
+    }, new Map());
+
+    const token = tokenMap.get(mintAddress.toBase58());
+
+    if (token) {
+      return {
+        exist: true,
+        symbol: token.mint.currency.symbol,
+        decimal: token.mint.currency.decimals,
+      };
+    } else {
+      return { exist: false, symbol: "", decimal: 0 };
+    }
+  }
+};
 
 export const isValidAddress = (address: string) => {
-    try {
-        const publicKey = new PublicKey(address);
-        return true;
-    } catch (error) {
-        return false;
-    }
-}
+  try {
+    const publicKey = new PublicKey(address);
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
 
 export function isValidPrivateKey(privateKey: string) {
-
-    try {
-        const key = base58.decode(privateKey)
-        const keypair = Keypair.fromSecretKey(key);
-        return true;
-    } catch (error) {
-        return false;
-    }
+  try {
+    const key = base58.decode(privateKey);
+    const keypair = Keypair.fromSecretKey(key);
+    return true;
+  } catch (error) {
+    return false;
+  }
 }
 
 export function getWalletFromPrivateKey(privateKey: string): any | null {
+  try {
+    const key: Uint8Array = base58.decode(privateKey);
+    const keypair: Keypair = Keypair.fromSecretKey(key);
 
-    try {
-        const key: Uint8Array = base58.decode(privateKey)
-        const keypair: Keypair = Keypair.fromSecretKey(key);
+    const publicKey = keypair.publicKey.toBase58();
+    const secretKey = base58.encode(keypair.secretKey);
 
-        const publicKey = keypair.publicKey.toBase58()
-        const secretKey = base58.encode(keypair.secretKey)
-
-        return { publicKey, secretKey, wallet: keypair }
-    } catch (error) {
-        return null;
-    }
+    return { publicKey, secretKey, wallet: keypair };
+  } catch (error) {
+    return null;
+  }
 }
 
 export const generateNewWallet = () => {
+  try {
+    const keypair: Keypair = Keypair.generate();
 
-    try {
+    const publicKey = keypair.publicKey.toBase58();
+    const secretKey = base58.encode(keypair.secretKey);
 
-        const keypair: Keypair = Keypair.generate()
-
-        const publicKey = keypair.publicKey.toBase58()
-        const secretKey = base58.encode(keypair.secretKey)
-
-        return { publicKey, secretKey, wallet: keypair }
-
-    } catch (error) {
-
-        console.log(error)
-        return null
-    }
-}
+    return { publicKey, secretKey, wallet: keypair };
+  } catch (error) {
+    console.log(error);
+    return null;
+  }
+};
 
 export function isValidSeedPhrase(seedPhrase: string) {
-    // Check if the seed phrase is valid
-    const isValid = bip39.validateMnemonic(seedPhrase);
+  // Check if the seed phrase is valid
+  const isValid = bip39.validateMnemonic(seedPhrase);
 
-    return isValid;
+  return isValid;
 }
 
-export async function seedPhraseToPrivateKey(seedPhrase: string): Promise<string | null> {
-    try {
-        const seed: Buffer = bip39.mnemonicToSeedSync(seedPhrase).slice(0, 32); // Take the first 32 bytes for the seed
-        const keypair: Keypair = Keypair.fromSecretKey(Uint8Array.from(seed));
-        return base58.encode(keypair.secretKey);
-    } catch (error) {
-        return null;
-    }
+export async function seedPhraseToPrivateKey(
+  seedPhrase: string
+): Promise<string | null> {
+  try {
+    const seed: Buffer = bip39.mnemonicToSeedSync(seedPhrase).slice(0, 32); // Take the first 32 bytes for the seed
+    const keypair: Keypair = Keypair.fromSecretKey(Uint8Array.from(seed));
+    return base58.encode(keypair.secretKey);
+  } catch (error) {
+    return null;
+  }
 }
-
 
 export const roundDecimal = (number: number, digits: number = 5) => {
-    return number.toLocaleString('en-US', { maximumFractionDigits: digits });
-}
+  return number.toLocaleString("en-US", { maximumFractionDigits: digits });
+};
 
-export const roundDecimalWithUnit = (number: number, digits: number = 5, unit: string = '') => {
-    if (!number) {
-        return "0 " + unit
-    }
-    return number.toLocaleString('en-US', { maximumFractionDigits: digits }) + unit;
-}
+export const roundDecimalWithUnit = (
+  number: number,
+  digits: number = 5,
+  unit: string = ""
+) => {
+  if (!number) {
+    return "0 " + unit;
+  }
+  return (
+    number.toLocaleString("en-US", { maximumFractionDigits: digits }) + unit
+  );
+};
 
 export const sRoundDecimal = (number: number, digits: number) => {
+  let result = roundDecimal(number, digits);
+  return number > 0 ? `+${result}` : result;
+};
 
-    let result = roundDecimal(number, digits)
-    return number > 0 ? `+${result}` : result
-}
+export const sRoundDecimalWithUnitAndNull = (
+  number: number | null,
+  digits: number,
+  unit: string
+) => {
+  if (!number) {
+    return "None";
+  }
 
-export const sRoundDecimalWithUnitAndNull = (number: number | null, digits: number, unit: string) => {
+  if (number === 0) {
+    return `0${unit}`;
+  }
 
-    if (!number) {
-        return 'None'
-    }
-
-    if (number === 0) {
-        return `0${unit}`
-    }
-
-    let result = roundDecimal(number, digits)
-    return number > 0 ? `+${result}${unit}` : `${result}${unit}`
-}
+  let result = roundDecimal(number, digits);
+  return number > 0 ? `+${result}${unit}` : `${result}${unit}`;
+};
 
 export const roundSolUnit = (number: number, digits: number = 5) => {
+  if (Math.abs(number) >= 0.00001 || number === 0) {
+    return `${roundDecimal(number, digits)} SOL`;
+  }
 
-    if (Math.abs(number) >= 0.00001 || number === 0) {
-        return `${roundDecimal(number, digits)} SOL`
-    }
+  number *= 1000000000;
 
-    number *= 1000000000
-
-    return `${roundDecimal(number, digits)} lamports`
-}
+  return `${roundDecimal(number, digits)} lamports`;
+};
 
 export const roundBigUnit = (number: number, digits: number = 5) => {
+  let unitNum = 0;
+  const unitName = ["", "K", "M", "B"];
+  while (number >= 1000) {
+    unitNum++;
+    number /= 1000;
 
-    let unitNum = 0
-    const unitName = ['', 'K', 'M', 'B']
-    while (number >= 1000) {
-
-        unitNum++
-        number /= 1000
-
-        if (unitNum > 2) {
-            break
-        }
+    if (unitNum > 2) {
+      break;
     }
+  }
 
-    return `${roundDecimal(number, digits)}${unitName[unitNum]}`
-}
+  return `${roundDecimal(number, digits)}${unitName[unitNum]}`;
+};
 
 export const shortenAddress = (address: string, length: number = 6) => {
-    if (address.length < 2 + 2 * length) {
-        return address; // Not long enough to shorten
-    }
+  if (address.length < 2 + 2 * length) {
+    return address; // Not long enough to shorten
+  }
 
-    const start = address.substring(0, length + 2);
-    const end = address.substring(address.length - length);
+  const start = address.substring(0, length + 2);
+  const end = address.substring(address.length - length);
 
-    return start + "..." + end;
-}
+  return start + "..." + end;
+};
 
 export const shortenString = (str: string, length: number = 8) => {
+  if (length < 3) {
+    length = 3;
+  }
 
-    if (length < 3) {
-        length = 3
-    }
+  if (!str) {
+    return "undefined";
+  }
 
-    if (!str) {
-        return "undefined"
-    }
+  if (str.length < length) {
+    return str; // Not long enough to shorten
+  }
 
-    if (str.length < length) {
-        return str; // Not long enough to shorten
-    }
+  const temp = str.substring(0, length - 3) + "...";
 
-    const temp = str.substring(0, length - 3) + '...';
-
-    return temp;
-}
+  return temp;
+};
 
 export const limitString = (str: string, length: number = 8) => {
+  if (length < 3) {
+    length = 3;
+  }
 
-    if (length < 3) {
-        length = 3
-    }
+  if (!str) {
+    return "undefined";
+  }
 
-    if (!str) {
-        return "undefined"
-    }
+  if (str.length < length) {
+    return str; // Not long enough to shorten
+  }
 
-    if (str.length < length) {
-        return str; // Not long enough to shorten
-    }
+  const temp = str.substring(0, length);
 
-    const temp = str.substring(0, length);
-
-    return temp;
-}
+  return temp;
+};
 
 export const getTimeStringUTC = (timestamp: Date) => {
+  const options: any = {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    timeZone: "UTC",
+  };
 
-    const options: any = {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: 'numeric',
-        timeZone: 'UTC'
-    };
+  const formattedDate = timestamp.toLocaleString("en-US", options);
 
-    const formattedDate = timestamp.toLocaleString('en-US', options);
-
-    return formattedDate
-}
+  return formattedDate;
+};
 
 export const getTimeStringFormat = (timestamp: number) => {
+  let date = new Date(timestamp);
+  let year = date.getFullYear();
+  let month = String(date.getMonth() + 1).padStart(2, "0");
+  let day = String(date.getDate()).padStart(2, "0");
+  let hours = String(date.getHours()).padStart(2, "0");
+  let minutes = String(date.getMinutes()).padStart(2, "0");
+  // let seconds = String(date.getSeconds()).padStart(2, '0');
 
-    let date = new Date(timestamp)
-    let year = date.getFullYear();
-    let month = String(date.getMonth() + 1).padStart(2, '0');
-    let day = String(date.getDate()).padStart(2, '0');
-    let hours = String(date.getHours()).padStart(2, '0');
-    let minutes = String(date.getMinutes()).padStart(2, '0');
-    // let seconds = String(date.getSeconds()).padStart(2, '0');
-
-    // return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-}
+  // return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
+};
 
 export const getTimeStringUTCFromNumber = (timestamp: number) => {
+  try {
+    return getTimeStringUTC(new Date(timestamp));
+  } catch (error) {}
 
-    try {
-        return getTimeStringUTC(new Date(timestamp))
-    } catch (error) {
+  return "None";
+};
 
+export const fetchAPI = async (
+  url: string,
+  method: "GET" | "POST",
+  data: Record<string, any> = {}
+): Promise<any | null> => {
+  return new Promise((resolve) => {
+    if (method === "POST") {
+      axios
+        .post(url, data)
+        .then((response) => {
+          let json = response.data;
+          resolve(json);
+        })
+        .catch((error) => {
+          // console.error('[fetchAPI]', error)
+          resolve(null);
+        });
+    } else {
+      axios
+        .get(url)
+        .then((response) => {
+          let json = response.data;
+          resolve(json);
+        })
+        .catch((error) => {
+          // console.error('fetchAPI', error);
+          resolve(null);
+        });
     }
-
-    return 'None'
-}
-
-export const fetchAPI = async (url: string, method: 'GET' | 'POST', data: Record<string, any> = {}): Promise<any | null> => {
-    return new Promise(resolve => {
-        if (method === "POST") {
-            axios.post(url, data).then(response => {
-                let json = response.data;
-                resolve(json);
-            }).catch(error => {
-                // console.error('[fetchAPI]', error)
-                resolve(null);
-            });
-        } else {
-            axios.get(url).then(response => {
-                let json = response.data;
-                resolve(json);
-            }).catch(error => {
-                // console.error('fetchAPI', error);
-                resolve(null);
-            });
-        }
-    });
+  });
 };
 
 export const addressToHex = (address: string) => {
-    const hexString = '0x' + address.slice(2).toLowerCase().padStart(64, '0');
-    return hexString.toLowerCase();
-}
+  const hexString = "0x" + address.slice(2).toLowerCase().padStart(64, "0");
+  return hexString.toLowerCase();
+};
 
 export const createDirectoryIfNotExists = (directoryPath: string) => {
-    if (!fs.existsSync(directoryPath)) {
-        fs.mkdirSync(directoryPath);
-        console.log(`The directory '${directoryPath}' has been created.`);
-    } else {
-    }
+  if (!fs.existsSync(directoryPath)) {
+    fs.mkdirSync(directoryPath);
+    console.log(`The directory '${directoryPath}' has been created.`);
+  } else {
+  }
 };
 
 export const getShortenedAddress = (address: string) => {
+  if (!address) {
+    return "";
+  }
 
-    if (!address) {
-        return ''
-    }
+  let str = address.slice(0, 24) + "...";
 
-    let str = address.slice(0, 24) + '...'
+  return str;
+};
 
-    return str
-}
-
-export function waitForEvent(eventEmitter: EventEmitter, eventName: string): Promise<void> {
-    return new Promise<void>(resolve => {
-        eventEmitter.on(eventName, resolve);
-    });
+export function waitForEvent(
+  eventEmitter: EventEmitter,
+  eventName: string
+): Promise<void> {
+  return new Promise<void>((resolve) => {
+    eventEmitter.on(eventName, resolve);
+  });
 }
 
 export async function waitSeconds(seconds: number) {
-    const eventEmitter = new EventEmitter()
+  const eventEmitter = new EventEmitter();
 
-    setTimeout(() => {
-        eventEmitter.emit('TimeEvent')
-    }, seconds * 1000)
+  setTimeout(() => {
+    eventEmitter.emit("TimeEvent");
+  }, seconds * 1000);
 
-    await waitForEvent(eventEmitter, 'TimeEvent')
+  await waitForEvent(eventEmitter, "TimeEvent");
 }
 
 export async function waitMilliseconds(ms: number) {
-    const eventEmitter = new EventEmitter()
+  const eventEmitter = new EventEmitter();
 
-    setTimeout(() => {
-        eventEmitter.emit('TimeEvent')
-    }, ms)
+  setTimeout(() => {
+    eventEmitter.emit("TimeEvent");
+  }, ms);
 
-    await waitForEvent(eventEmitter, 'TimeEvent')
+  await waitForEvent(eventEmitter, "TimeEvent");
 }
 
 export const getFullTimeElapsedFromSeconds = (totalSecs: number) => {
+  if (totalSecs < 0) {
+    totalSecs = 0;
+  }
 
-    if (totalSecs < 0) {
-        totalSecs = 0
+  let sec = 0,
+    min = 0,
+    hour = 0,
+    day = 0;
+
+  sec = totalSecs;
+  if (sec > 60) {
+    min = Math.floor(sec / 60);
+    sec = sec % 60;
+  }
+
+  if (min > 60) {
+    hour = Math.floor(min / 60);
+    min = min % 60;
+  }
+
+  if (hour > 24) {
+    day = Math.floor(hour / 24);
+    hour = hour % 60;
+  }
+
+  let timeElapsed = "";
+
+  if (day > 0) {
+    timeElapsed += `${day}d`;
+  }
+
+  if (hour > 0) {
+    if (timeElapsed !== "") {
+      timeElapsed += " ";
     }
 
-    let sec = 0, min = 0, hour = 0, day = 0
+    timeElapsed += `${hour}h`;
+  }
 
-    sec = totalSecs
-    if (sec > 60) {
-        min = Math.floor(sec / 60)
-        sec = sec % 60
+  if (min > 0) {
+    if (timeElapsed !== "") {
+      timeElapsed += " ";
     }
 
-    if (min > 60) {
-        hour = Math.floor(min / 60)
-        min = min % 60
+    timeElapsed += `${min}m`;
+  }
+
+  if (sec > 0) {
+    if (timeElapsed !== "") {
+      timeElapsed += " ";
     }
 
-    if (hour > 24) {
-        day = Math.floor(hour / 24)
-        hour = hour % 60
-    }
+    timeElapsed += `${sec}s`;
+  }
 
-    let timeElapsed = ''
-
-    if (day > 0) {
-        timeElapsed += `${day}d`
-    }
-
-    if (hour > 0) {
-        if (timeElapsed !== '') {
-            timeElapsed += ' '
-        }
-
-        timeElapsed += `${hour}h`
-    }
-
-    if (min > 0) {
-        if (timeElapsed !== '') {
-            timeElapsed += ' '
-        }
-
-        timeElapsed += `${min}m`
-    }
-
-    if (sec > 0) {
-        if (timeElapsed !== '') {
-            timeElapsed += ' '
-        }
-
-        timeElapsed += `${sec}s`
-    }
-
-    return timeElapsed
-}
+  return timeElapsed;
+};
 
 export const getFullMinSecElapsedFromSeconds = (totalSecs: number) => {
+  let sec = 0,
+    min = 0,
+    hour = 0,
+    day = 0;
 
-    let sec = 0, min = 0, hour = 0, day = 0
+  sec = totalSecs;
+  if (sec > 60) {
+    min = Math.floor(sec / 60);
+    sec = sec % 60;
+  }
 
-    sec = totalSecs
-    if (sec > 60) {
-        min = Math.floor(sec / 60)
-        sec = sec % 60
-    }
+  let timeElapsed = `${min}:${sec}`;
 
-    let timeElapsed = `${min}:${sec}`
-
-    return timeElapsed
-}
+  return timeElapsed;
+};
 
 export const sleep = (ms: number) => {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
+  return new Promise((resolve) => setTimeout(resolve, ms));
+};
 
 export const getDateTimeFromTimestamp = (timestmp: number) => {
+  const value = new Date(timestmp);
+  let month = (value.getMonth() + 1).toString();
+  let day = value.getDate().toString();
+  let year = value.getFullYear().toString();
 
-    const value = new Date(timestmp)
-    let month = (value.getMonth() + 1).toString()
-    let day = value.getDate().toString()
-    let year = value.getFullYear().toString()
+  return `${month}/${day}/${year}`;
+};
 
-    return `${month}/${day}/${year}`
-}
+export const getConfigString_Default = (
+  value: string,
+  defaultValue: string,
+  unit: string = "",
+  prefix: string = "",
+  digit: number = 9
+) => {
+  let output;
 
-export const getConfigString_Default = (value: string, defaultValue: string, unit: string = '', prefix: string = '', digit: number = 9) => {
+  const value2 = typeof value === "number" ? roundDecimal(value, digit) : value;
 
-    let output
+  let temp;
+  if (unit === "USD") {
+    temp = `$${value2}`;
+  } else if (unit === "%") {
+    temp = `${value2}%`;
+  } else {
+    temp = `${value2}${unit.length > 0 ? " " + unit : ""}`;
+  }
 
-    const value2 = (typeof value === 'number' ? roundDecimal(value, digit) : value)
+  if (value === defaultValue) {
+    output = `Default (${prefix}${temp})`;
+  } else {
+    output = `${prefix}${temp}`;
+  }
 
-    let temp
-    if (unit === 'USD') {
-        temp = `$${value2}`
-    } else if (unit === '%') {
-        temp = `${value2}%`
+  return output;
+};
+
+export const getConfigString_Text = (
+  text: string,
+  value: number,
+  autoValue: number,
+  unit: string = "",
+  digit: number = 9
+) => {
+  let output;
+
+  if (value === autoValue) {
+    output = text;
+  } else {
+    const value2 =
+      typeof value === "number" ? roundDecimal(value, digit) : value;
+    if (unit === "USD") {
+      output = `$${value2}`;
+    } else if (unit === "%") {
+      output = `${value2}%`;
     } else {
-        temp = `${value2}${unit.length > 0 ? ' ' + unit : ''}`
+      output = `${value2}${unit.length > 0 ? " " + unit : ""}`;
     }
+  }
 
-    if (value === defaultValue) {
-        output = `Default (${prefix}${temp})`
-    } else {
-        output = `${prefix}${temp}`
-    }
-
-    return output
-}
-
-export const getConfigString_Text = (text: string, value: number, autoValue: number, unit: string = '', digit: number = 9) => {
-
-    let output
-
-    if (value === autoValue) {
-        output = text
-    } else {
-
-        const value2 = (typeof value === 'number' ? roundDecimal(value, digit) : value)
-        if (unit === 'USD') {
-            output = `$${value2}`
-        } else if (unit === '%') {
-            output = `${value2}%`
-        } else {
-            output = `${value2}${unit.length > 0 ? ' ' + unit : ''}`
-        }
-    }
-
-    return output
-}
+  return output;
+};
 
 export const getConfigString_Checked = (value: number) => {
+  let output: string;
 
-    let output: string
+  if (value === 2) {
+    output = "🌐";
+  } else if (value === 1) {
+    output = "✅";
+  } else {
+    output = "❌";
+  }
 
-    if (value === 2) {
-        output = '🌐'
-    } else if (value === 1) {
-        output = '✅'
-    } else {
-        output = '❌'
-    }
-
-    return output
-}
+  return output;
+};
 
 export const getConfigWallet_Checked = (value: number) => {
+  let output;
 
-    let output
+  if (value === 1) {
+    output = "✅";
+  } else {
+    output = "";
+  }
 
-    if (value === 1) {
-        output = '✅'
-    } else {
-        output = ''
-    }
-
-    return output
-}
+  return output;
+};
 
 export function objectDeepCopy(obj: any, keysToExclude: string[] = []): any {
-    if (typeof obj !== 'object' || obj === null) {
-        return obj; // Return non-objects as is
-    }
+  if (typeof obj !== "object" || obj === null) {
+    return obj; // Return non-objects as is
+  }
 
-    const copiedObject: Record<string, any> = {};
-    for (const key in obj) {
-        if (obj.hasOwnProperty(key) && !keysToExclude.includes(key)) {
-            copiedObject[key] = obj[key];
-        }
+  const copiedObject: Record<string, any> = {};
+  for (const key in obj) {
+    if (obj.hasOwnProperty(key) && !keysToExclude.includes(key)) {
+      copiedObject[key] = obj[key];
     }
+  }
 
-    return copiedObject;
+  return copiedObject;
 }
 
-const ReferralCodeBase = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const ReferralCodeBase =
+  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 export function encodeChatId(chatId: string) {
-    const baseLength = ReferralCodeBase.length;
+  const baseLength = ReferralCodeBase.length;
 
-    let temp = Number(chatId)
-    let encoded = '';
-    while (temp > 0) {
-        const remainder = temp % baseLength;
-        encoded = ReferralCodeBase[remainder] + encoded;
-        temp = Math.floor(temp / baseLength);
-    }
+  let temp = Number(chatId);
+  let encoded = "";
+  while (temp > 0) {
+    const remainder = temp % baseLength;
+    encoded = ReferralCodeBase[remainder] + encoded;
+    temp = Math.floor(temp / baseLength);
+  }
 
-    // Pad with zeros to make it 5 characters
-    return encoded.padStart(5, '0');
+  // Pad with zeros to make it 5 characters
+  return encoded.padStart(5, "0");
 }
 
 export function decodeChatId(encoded: string) {
-    const baseLength = ReferralCodeBase.length;
+  const baseLength = ReferralCodeBase.length;
 
-    let decoded = 0;
-    const reversed = encoded.split('').reverse().join('');
+  let decoded = 0;
+  const reversed = encoded.split("").reverse().join("");
 
-    for (let i = 0; i < reversed.length; i++) {
-        const char = reversed[i];
-        const charValue = ReferralCodeBase.indexOf(char);
-        decoded += charValue * Math.pow(baseLength, i);
-    }
+  for (let i = 0; i < reversed.length; i++) {
+    const char = reversed[i];
+    const charValue = ReferralCodeBase.indexOf(char);
+    decoded += charValue * Math.pow(baseLength, i);
+  }
 
-    return decoded.toString();
+  return decoded.toString();
 }
 
 export const getCurrentTimeTick = (ms: boolean = false) => {
+  if (ms) {
+    return new Date().getTime();
+  }
 
-    if (ms) {
-        return new Date().getTime()
-    }
-
-    return Math.floor(new Date().getTime() / 1000)
-}
-
+  return Math.floor(new Date().getTime() / 1000);
+};
 
 // export const encryptPKey = (text: string) => {
 
@@ -644,60 +684,75 @@ export const getCurrentTimeTick = (ms: boolean = false) => {
 //     return crypto.aesDecrypt(text, process.env.CRYPT_KEY ?? '')
 // }
 
-
-export const getWalletTokenAccount = async (wallet: PublicKey, isToken2022: boolean = true) => {
-    const walletTokenAccount = await afx.get_mainnet_conn().getTokenAccountsByOwner(wallet, {
-        programId: isToken2022 ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID,
+export const getWalletTokenAccount = async (
+  wallet: PublicKey,
+  isToken2022: boolean = true
+) => {
+  const walletTokenAccount = await afx
+    .get_mainnet_conn()
+    .getTokenAccountsByOwner(wallet, {
+      programId: isToken2022 ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID,
     });
 
-    return walletTokenAccount.value.map((i) => ({
-        pubkey: i.pubkey,
-        programId: i.account.owner,
-        accountInfo: SPL_ACCOUNT_LAYOUT.decode(i.account.data),
-    }))
+  return walletTokenAccount.value.map((i) => ({
+    pubkey: i.pubkey,
+    programId: i.account.owner,
+    accountInfo: SPL_ACCOUNT_LAYOUT.decode(i.account.data),
+  }));
 };
 
-export const getWalletTokenBalance = async (wallet: any, addr: any, decimal: number): Promise<number> => {
-    const walletTokenAccounts = await getWalletTokenAccount(new PublicKey(wallet.publicKey), false);
-    let tokenBalance = 0;
-    if (walletTokenAccounts && walletTokenAccounts.length > 0) {
-        for (const acc of walletTokenAccounts) {
-            if (acc.accountInfo.mint.toBase58() === addr) {
-                tokenBalance = Number(acc.accountInfo.amount) / (10 ** decimal);
-                break
-            }
-        }
+export const getWalletTokenBalance = async (
+  wallet: any,
+  addr: any,
+  decimal: number
+): Promise<number> => {
+  const walletTokenAccounts = await getWalletTokenAccount(
+    new PublicKey(wallet.publicKey),
+    false
+  );
+  let tokenBalance = 0;
+  if (walletTokenAccounts && walletTokenAccounts.length > 0) {
+    for (const acc of walletTokenAccounts) {
+      if (acc.accountInfo.mint.toBase58() === addr) {
+        tokenBalance = Number(acc.accountInfo.amount) / 10 ** decimal;
+        break;
+      }
     }
+  }
 
-    return tokenBalance
-}
+  return tokenBalance;
+};
 
 export const getWalletSOLBalance = async (wallet: any): Promise<number> => {
-    try {
-        let balance: number = await afx.get_mainnet_conn().getBalance(new PublicKey(wallet.publicKey)) / LAMPORTS_PER_SOL
-        return balance
-    } catch (error) {
-        console.log(error)
-    }
+  try {
+    let balance: number =
+      (await afx
+        .get_mainnet_conn()
+        .getBalance(new PublicKey(wallet.publicKey))) / LAMPORTS_PER_SOL;
+    return balance;
+  } catch (error) {
+    console.log(error);
+  }
 
-    return 0
-}
-
+  return 0;
+};
 
 export const IsTokenAccountInWallet = async (wallet: any, addr: string) => {
-    const walletTokenAccount = await afx.get_mainnet_conn().getTokenAccountsByOwner(wallet.wallet.publicKey, {
-        programId: TOKEN_PROGRAM_ID,
+  const walletTokenAccount = await afx
+    .get_mainnet_conn()
+    .getTokenAccountsByOwner(wallet.wallet.publicKey, {
+      programId: TOKEN_PROGRAM_ID,
     });
 
-    for (let item of walletTokenAccount.value) {
-        const accountInfo = SPL_ACCOUNT_LAYOUT.decode(item.account.data)
-        if (accountInfo.mint.toString() == addr) {
-            return true
-        }
+  for (let item of walletTokenAccount.value) {
+    const accountInfo = SPL_ACCOUNT_LAYOUT.decode(item.account.data);
+    if (accountInfo.mint.toString() == addr) {
+      return true;
     }
-    return false
+  }
+  return false;
 };
 
 export const getRandomNumber = (min: number, max: number) => {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 };
