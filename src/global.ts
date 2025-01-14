@@ -20,7 +20,7 @@ export const rankingEmojis = [
   "🔟",
 ];
 
-export const errorLog = (summary: string, error: any): void => {
+export const error = (summary: string, error: any): void => {
   if (error?.response?.body?.description) {
     console.log(
       "\x1b[31m%s\x1b[0m",

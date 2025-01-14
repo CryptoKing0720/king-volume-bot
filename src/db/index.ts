@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import * as user from "./user";
 import * as token from "./token";
 import * as wallet from "./wallet";
+import * as global from "../global";
 
 export const init = () => {
   return new Promise(async (resolve: any, reject: any) => {
@@ -14,7 +15,7 @@ export const init = () => {
         resolve();
       })
       .catch((err) => {
-        console.error("Could not connect to MongoDB...", err);
+        global.error("[db init]", err);
         reject();
       });
   });

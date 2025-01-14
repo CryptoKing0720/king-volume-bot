@@ -13,9 +13,7 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 import * as global from "./global";
-
-const dexscreenerTokenPairUrl: string =
-  "https://api.dexscreener.com/latest/dex/tokens/";
+import * as config from "./config";
 
 const ReferralCodeBase =
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -62,7 +60,12 @@ export const generateNewWallet = () => {
 
     return { publicKey, secretKey, wallet: keypair };
   } catch (error) {
-    console.log(error);
+    if (error instanceof Error) {
+      global.error("[generateNewWallet]", error);
+    } else {
+      global.error("[generateNewWallet]", "Error generating new wallet");
+    }
+
     return null;
   }
 };
@@ -216,9 +219,9 @@ export const getTimeStringFormat = (timestamp: number) => {
 export const getTimeStringUTCFromNumber = (timestamp: number) => {
   try {
     return getTimeStringUTC(new Date(timestamp));
-  } catch (error) {}
-
-  return "None";
+  } catch (error) {
+    return "None";
+  }
 };
 
 export const addressToHex = (address: string) => {
@@ -527,10 +530,14 @@ export const getWalletSOLBalance = async (wallet: any): Promise<number> => {
         .getBalance(new PublicKey(wallet.publicKey))) / LAMPORTS_PER_SOL;
     return balance;
   } catch (error) {
-    console.log(error);
-  }
+    if (error instanceof Error) {
+      global.error("[getWalletSOLBalance]", error);
+    } else {
+      global.error("[getWalletSOLBalance]", "Error fetching balance");
+    }
 
-  return 0;
+    return 0;
+  }
 };
 
 export const getSOLPrice = async (): Promise<number> => {
@@ -548,69 +555,72 @@ export const getSOLPrice = async (): Promise<number> => {
 
 export const getPairInfo = async (mint: string) => {
   const result: any = {};
-  const data = await fetchAPI(dexscreenerTokenPairUrl + mint, "GET");
-  if (data && data.pairs) {
+
+  try {
+    const data = await fetchAPI(config.DEXSCREENER_TOKEN_API + mint, "GET");
+
+    if (!data || !data.pairs) {
+      throw new Error("No pairs data available");
+    }
+
     for (let pair of data.pairs) {
-      if (pair.chainId == "solana" && pair.dexId == "raydium") {
+      if (
+        pair.chainId === "solana" &&
+        pair.dexId === "raydium" &&
+        pair.labels === undefined
+      ) {
         result.dex = pair.dexId;
-        result.pair = pair.baseToken.symbol + " / " + pair.quoteToken.symbol;
-        result.price = pair.priceUsd + "$ / " + pair.priceChange.m5 + "%";
-        result.trx5m =
-          (((pair.txns.m5.buys as number) + pair.txns.m5.sells) as number) +
-          " (" +
-          pair.txns.m5.buys +
-          " buys/" +
-          pair.txns.m5.sells +
-          " sells)";
-        result.trx1h =
-          (((pair.txns.h1.buys as number) + pair.txns.h1.sells) as number) +
-          " (" +
-          pair.txns.h1.buys +
-          " buys/" +
-          pair.txns.h1.sells +
-          " sells)";
-        result.trx6h =
-          (((pair.txns.h6.buys as number) + pair.txns.h6.sells) as number) +
-          " (" +
-          pair.txns.h6.buys +
-          " buys/" +
-          pair.txns.h6.sells +
-          " sells)";
-        result.trx24h =
-          (((pair.txns.h24.buys as number) + pair.txns.h24.sells) as number) +
-          " (" +
-          pair.txns.h24.buys +
-          " buys/" +
-          pair.txns.h24.sells +
-          " sells)";
+        result.pair = `${pair.baseToken.symbol} / ${pair.quoteToken.symbol}`;
+        result.price = `${pair.priceUsd}$ / ${pair.priceChange.m5}%`;
+
+        const calculateTxns = (txns: any) =>
+          `${txns.buys + txns.sells} (${txns.buys} buys/${txns.sells} sells)`;
+
+        result.trx5m = calculateTxns(pair.txns.m5);
+        result.trx1h = calculateTxns(pair.txns.h1);
+        result.trx6h = calculateTxns(pair.txns.h6);
+        result.trx24h = calculateTxns(pair.txns.h24);
+
         result.volume5m = roundBigUnit(pair.volume.m5, 2);
         result.volume1h = roundBigUnit(pair.volume.h1, 2);
         result.volume6h = roundBigUnit(pair.volume.h6, 2);
         result.volume24h = roundBigUnit(pair.volume.h24, 2);
         result.lp = roundBigUnit(pair.liquidity.usd, 2);
         result.mc = roundBigUnit(pair.fdv, 2);
+
+        // Initialize socials array
+        result.socials = {};
+
+        // Handle websites
         if (pair?.info?.websites?.length > 0) {
-          result.socials = {
-            website: pair?.info?.websites[0]?.url,
-          };
+          result.socials.website = pair.info.websites[0]?.url;
         }
 
-        if (pair?.info?.socials?.length > 0) {
-          for (let social of pair.info.socials) {
-            if (social.type === "telegram") {
-              result.socials = { telegram: social.url, ...result.socials };
-            } else if (social.type === "twitter") {
-              result.socials = { twitter: social.url, ...result.socials };
-            } else if (social.type === "discord") {
-              result.socials = { discord: social.url, ...result.socials };
-            }
+        // Handle socials
+        pair?.info?.socials?.forEach((social: any) => {
+          if (social.type === "telegram") {
+            result.socials.telegram = social.url;
+          } else if (social.type === "twitter") {
+            result.socials.twitter = social.url;
+          } else if (social.type === "discord") {
+            result.socials.discord = social.url;
           }
-        }
-        return result;
+        });
+
+        return result; // Early return when we find the pair
       }
     }
+
+    return result; // Return empty result if no valid pair is found
+  } catch (error) {
+    if (error instanceof Error) {
+      global.error("[getPairInfo]", error);
+      return { error: error.message }; // Return error message
+    } else {
+      global.error("[getPairInfo]", "Error fetching pair info");
+      return { error: "Error fetching pair info" }; // Return error message
+    }
   }
-  return result;
 };
 
 export const getTokenInfo = async (addr: string) => {
@@ -704,7 +714,6 @@ export const fetchAPI = async (
           resolve(json);
         })
         .catch((error) => {
-          // console.error('[fetchAPI]', error)
           resolve(null);
         });
     } else {
@@ -715,7 +724,6 @@ export const fetchAPI = async (
           resolve(json);
         })
         .catch((error) => {
-          // console.error('fetchAPI', error);
           resolve(null);
         });
     }

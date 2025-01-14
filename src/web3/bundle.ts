@@ -5,6 +5,7 @@ import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 
 import * as config from "../config";
 import * as utils from "../utils";
+import * as global from "../global";
 
 const DELAY_PER_REQ = 350;
 const MAX_REQ_COUNT = 4;
@@ -145,7 +146,7 @@ class JitoBundle {
       transactionsConfirmResult = await this.getBundleStatues(bundleUUID);
       return transactionsConfirmResult;
     } catch (error) {
-      console.error("Creating and sending bundle failed...", error);
+      global.error("[sendBundle]", error);
       // await utils.sleep(10000)
       return false;
     }

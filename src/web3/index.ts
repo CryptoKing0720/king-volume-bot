@@ -1,16 +1,16 @@
 import { PublicKey } from "@solana/web3.js";
 
-import * as instance from ".";
+import * as instance from "../bot";
 import * as database from "../db";
-import * as fastSwap from "../web3/fast_swap";
+import * as fastSwap from "./fast_swap";
 import * as global from "../global";
-import * as bundle from "../web3/bundle";
+import * as bundle from "./bundle";
 import * as config from "../config";
 import * as utils from "../utils";
 
 const jitoBundler = new bundle.JitoBundler();
 
-const lookUpTableMap = new Map();
+const lookupTableMap = new Map();
 
 let solPrice = 0;
 
@@ -62,7 +62,7 @@ const makeTransactionAndSendBundle = async (
       const buyInsts = await fastSwap.getBuyTransactionInsts(
         depositWallet,
         buyAmount,
-        fastSwap.PoolKeysMap.get(token.addr)
+        fastSwap.poolKeysMap.get(token.addr)
       );
       instructions = instructions.concat(buyInsts.instructions.slice(1, 5));
       const sellTokenAmount = parseFloat(
@@ -73,7 +73,7 @@ const makeTransactionAndSendBundle = async (
         i >= wallets.length - 1
           ? sellTokenAmount + tokenBalance
           : sellTokenAmount,
-        fastSwap.PoolKeysMap.get(token.addr)
+        fastSwap.poolKeysMap.get(token.addr)
       );
       instructions = instructions.concat(sellInsts.instructions.slice(1, 5));
 
@@ -108,7 +108,7 @@ const makeTransactionAndSendBundle = async (
         conn,
         [wallet.wallet, depositWallet.wallet],
         instructions,
-        lookUpTableMap.get(token.addr)
+        lookupTableMap.get(token.addr)
       );
       if (versionedTransaction) {
         const simulateTx = await conn.simulateTransaction(versionedTransaction);
@@ -143,11 +143,11 @@ const sellAllTokens = async (chatid: string, addr: string) => {
   const user: any = await database.user.selectUser({ chatid });
   const depositWallet: any = utils.getWalletFromPrivateKey(user.depositWallet);
   const token: any = await database.token.selectToken({ chatid, addr });
-  const loadPoolKeys: boolean = await fastSwap.loadPoolkeysFromMarket(
+  const isLoaded: boolean = await fastSwap.loadPoolKeysFromMarket(
     token.addr,
     token.decimal
   );
-  if (loadPoolKeys) {
+  if (isLoaded) {
     const tokenBalance: number = await utils.getWalletTokenBalance(
       depositWallet,
       token.addr,
@@ -159,7 +159,7 @@ const sellAllTokens = async (chatid: string, addr: string) => {
     const sellInsts: any = await fastSwap.getSellTransactionInsts(
       depositWallet,
       tokenBalance,
-      fastSwap.PoolKeysMap.get(token.addr)
+      fastSwap.poolKeysMap.get(token.addr)
     );
     const versionedTransaction = await fastSwap.getVersionedTransaction(
       global.getMainnetConn(),
@@ -181,7 +181,7 @@ export const registerToken = async (
     return config.ResultCode.SUCCESS;
   }
   const tokens: any = await database.token.selectTokens({});
-  const regist = await database.token.registToken({
+  const regist = await database.token.registerToken({
     chatid,
     addr,
     symbol,
@@ -208,7 +208,7 @@ export const run = async (chatid: string, addr: string) => {
     if (token.volume / config.VOLUME_UNIT >= token.target) {
       await instance.sendMessage(
         chatid,
-        "😀 Congratulation, Bot achieved target."
+        "😀 Congratulations! The bot has successfully achieved its target. 🎉"
       );
       await stop(chatid, addr);
       break;
@@ -226,7 +226,7 @@ export const run = async (chatid: string, addr: string) => {
       if (solBalance < config.LIMIT_REST_SOL_BALANCE) {
         await instance.sendMessage(
           chatid,
-          "⚠️ Warning, There is not enough SOL. Please deposit more SOL if you wanna make volume and try again."
+          "⚠️ Warning: Insufficient SOL balance. Please deposit more SOL to create volume and try again. Thank you! 😊"
         );
         break;
       }
@@ -263,7 +263,7 @@ export const start = async (
   if (solBalance < config.LIMIT_REST_SOL_BALANCE * 5) {
     await instance.sendMessage(
       chatid,
-      "⚠️ Warning, There is not enough SOL. Please deposit more SOL if you wanna make volume and try again."
+      "⚠️ Warning: Insufficient SOL balance. Please deposit more SOL to create volume and try again. Thank you! 😊"
     );
     return config.ResultCode.USER_INSUFFICIENT_ENOUGH_SOL;
   }
@@ -274,22 +274,25 @@ export const start = async (
   }
   token.botId = 1;
   await token.save();
-  const loadPoolKeys: boolean = await fastSwap.loadPoolkeysFromMarket(
+  const isLoaded: boolean = await fastSwap.loadPoolKeysFromMarket(
     token.addr,
     token.decimal
   );
-  if (loadPoolKeys) {
+
+  if (isLoaded) {
     if (token.lookupTableAddr && token.lookupTableAddr != "") {
       const lookupTableAccount: any = (
         await conn.getAddressLookupTable(new PublicKey(token.lookupTableAddr), {
           commitment: "finalized",
         })
       ).value;
-      lookUpTableMap.set(token.addr, lookupTableAccount);
+
+      lookupTableMap.set(token.addr, lookupTableAccount);
     }
+
     if (!token.lookupTableAddr || token.lookupTableAddr == "") {
-      const poolKeys = fastSwap.PoolKeysMap.get(token.addr);
-      const createLookupTable = await fastSwap.getCreateLookUpTableTransaction(
+      const poolKeys = fastSwap.poolKeysMap.get(token.addr);
+      const createLookupTable = await fastSwap.createLookUpTableTransaction(
         depositWallet,
         poolKeys
       );
@@ -309,7 +312,7 @@ export const start = async (
           )
         ).value;
         if (lookupTableAccount) {
-          lookUpTableMap.set(token.addr, lookupTableAccount);
+          lookupTableMap.set(token.addr, lookupTableAccount);
           break;
         }
       }
@@ -317,7 +320,7 @@ export const start = async (
 
     if (!(await utils.isTokenAccountInWallet(depositWallet, addr))) {
       const insts = [
-        fastSwap.getCreateAccountTransactionInst(
+        fastSwap.createAccountTransactionInst(
           depositWallet,
           depositWallet,
           token.addr
@@ -327,7 +330,7 @@ export const start = async (
         conn,
         [depositWallet.wallet],
         insts,
-        lookUpTableMap.get(token.addr)
+        lookupTableMap.get(token.addr)
       );
       await jitoBundler.sendBundles([versionedTransaction], depositWallet, 10);
       await utils.sleep(4000);
@@ -337,15 +340,15 @@ export const start = async (
       await fastSwap.getBuyTransactionInsts(
         depositWallet,
         config.MIN_BUY_AMOUNT,
-        fastSwap.PoolKeysMap.get(token.addr)
+        fastSwap.poolKeysMap.get(token.addr)
       );
     } catch (error) {
-      console.log(error);
+      global.error("[start]", error);
 
       await token.save();
       await instance.sendMessage(
         chatid,
-        "Sorry, Bot cann't buy this token now. Please try again later."
+        "🙏 Sorry, the bot is unable to buy this token at the moment. Please try again later. Thank you for your patience! 😊"
       );
       token.botId = 0;
       await token.save();
@@ -372,9 +375,11 @@ export const withdraw = async (chatid: string, addr: string) => {
   const depositWalletSOLBalance: number = await utils.getWalletSOLBalance(
     depositWallet
   );
+
   if (depositWalletSOLBalance <= config.SOL_TRANSFER_FEE) {
     return false;
   }
+
   return await jitoBundler.sendBundles(
     [
       await fastSwap.getVersionedTransaction(

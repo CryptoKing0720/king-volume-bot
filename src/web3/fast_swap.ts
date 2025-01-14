@@ -31,7 +31,7 @@ import * as global from "../global";
 import * as config from "../config";
 import * as utils from "../utils";
 
-const dexscreenerAPI: string = "https://api.dexscreener.com/latest/dex/tokens/";
+const SOLANA_NATIVE_DECIMAL = 9;
 
 export const poolKeysMap = new Map();
 
@@ -107,6 +107,89 @@ const calcAmountOut = async (
   };
 };
 
+const fetchRaydiumPairAddress = async (
+  base: string
+): Promise<string | null> => {
+  try {
+    const data = await utils.fetchAPI(
+      config.DEXSCREENER_TOKEN_API + base,
+      "GET"
+    );
+    for (const pair of data.pairs) {
+      if (pair.chainId === "solana" && pair.dexId === "raydium") {
+        return pair.pairAddress;
+      }
+    }
+  } catch (error) {
+    console.error("Error fetching Raydium pair address:", error);
+  }
+  return null;
+};
+
+const fetchPoolKeys = async (
+  base: string,
+  baseDecimal: number,
+  raydiumPairAddr: string
+): Promise<any | null> => {
+  const conn = global.getMainnetConn();
+  try {
+    const { accounts, direction } = await findMarketAccounts(conn, base);
+    for (const account of accounts) {
+      const marketInfo = MARKET_STATE_LAYOUT_V3.decode(
+        account.accountInfo.data
+      );
+
+      const poolKeys = Liquidity.getAssociatedPoolKeys({
+        version: 4,
+        marketVersion: 3,
+        baseMint: direction ? new PublicKey(base) : NATIVE_MINT,
+        quoteMint: direction ? NATIVE_MINT : new PublicKey(base),
+        baseDecimals: direction ? baseDecimal : SOLANA_NATIVE_DECIMAL,
+        quoteDecimals: direction ? SOLANA_NATIVE_DECIMAL : baseDecimal,
+        marketId: account.publicKey,
+        programId: MAINNET_PROGRAM_ID.AmmV4,
+        marketProgramId: MAINNET_PROGRAM_ID.OPENBOOK_MARKET,
+      });
+
+      if (poolKeys.id.toString() === raydiumPairAddr) {
+        Object.assign(poolKeys, {
+          marketBaseVault: marketInfo.baseVault,
+          marketQuoteVault: marketInfo.quoteVault,
+          marketBids: marketInfo.bids,
+          marketAsks: marketInfo.asks,
+          marketEventQueue: marketInfo.eventQueue,
+        });
+        return poolKeys;
+      }
+    }
+  } catch (error) {
+    console.error("Error fetching pool keys:", error);
+  }
+  return null;
+};
+
+const findMarketAccounts = async (
+  conn: any,
+  base: string
+): Promise<{ accounts: any[]; direction: boolean }> => {
+  let accounts = await Market.findAccountsByMints(
+    conn,
+    new PublicKey(base),
+    NATIVE_MINT,
+    MAINNET_PROGRAM_ID.OPENBOOK_MARKET
+  );
+
+  if (accounts.length) return { accounts, direction: true };
+
+  accounts = await Market.findAccountsByMints(
+    conn,
+    NATIVE_MINT,
+    new PublicKey(base),
+    MAINNET_PROGRAM_ID.OPENBOOK_MARKET
+  );
+  return { accounts, direction: false };
+};
+
 export const getPriorityFeeInst = () => {
   const PRIORITY_FEE_INSTRUCTIONS = ComputeBudgetProgram.setComputeUnitPrice({
     microLamports: config.PRIORITY_RATE,
@@ -114,7 +197,7 @@ export const getPriorityFeeInst = () => {
   return PRIORITY_FEE_INSTRUCTIONS;
 };
 
-export const getCreateAccountTransactionInst = (
+export const createAccountTransactionInst = (
   payer: any,
   wallet: any,
   addr: string
@@ -149,95 +232,30 @@ export const getTransferSOLInst = (
   });
 };
 
-export const loadPoolkeysFromMarket = async (
+export const loadPoolKeysFromMarket = async (
   base: string,
   baseDecimal: number
 ): Promise<boolean> => {
-  let poolKeys = poolKeysMap.get(base);
-  if (poolKeys) {
-    return true;
-  }
+  const poolKeys = poolKeysMap.get(base);
+  if (poolKeys) return true;
 
-  let raydiumPairAddr: string = "";
   try {
-    const data = await utils.fetchAPI(dexscreenerAPI + base, "GET");
-    for (let pair of data.pairs) {
-      if (pair.labels && pair.labels.length) {
-        continue;
-      }
-      if (pair.chainId == "solana" && pair.dexId == "raydium") {
-        raydiumPairAddr = pair.pairAddress;
-        break;
-      }
-    }
-    if (raydiumPairAddr == "") {
-      return false;
+    const raydiumPairAddr = await fetchRaydiumPairAddress(base);
+    if (!raydiumPairAddr) return false;
+
+    const poolKeys = await fetchPoolKeys(base, baseDecimal, raydiumPairAddr);
+    if (poolKeys) {
+      poolKeysMap.set(base, poolKeys);
+      return true;
     }
   } catch (error) {
-    return false;
+    global.error("[loadPoolKeysFromMarket]", error);
   }
 
-  const conn = global.getMainnetConn();
-  try {
-    let direction: boolean = true;
-    let poolIds: any[] = await Market.findAccountsByMints(
-      conn,
-      new PublicKey(base),
-      NATIVE_MINT,
-      MAINNET_PROGRAM_ID.OPENBOOK_MARKET
-    );
-
-    if (!poolIds.length) {
-      poolIds = await Market.findAccountsByMints(
-        conn,
-        NATIVE_MINT,
-        new PublicKey(base),
-        MAINNET_PROGRAM_ID.OPENBOOK_MARKET
-      );
-      direction = false;
-    }
-
-    for (let poolId of poolIds) {
-      const marketId = poolId.publicKey;
-      const accountInfo = poolId.accountInfo;
-      const marketInfo = MARKET_STATE_LAYOUT_V3.decode(accountInfo.data);
-      poolKeys = Liquidity.getAssociatedPoolKeys({
-        version: 4,
-        marketVersion: 3,
-        baseMint: direction ? new PublicKey(base) : NATIVE_MINT,
-        quoteMint: direction ? NATIVE_MINT : new PublicKey(base),
-        baseDecimals: direction ? baseDecimal : 9,
-        quoteDecimals: direction ? 9 : baseDecimal,
-        marketId: marketId,
-        programId: MAINNET_PROGRAM_ID.AmmV4,
-        marketProgramId: MAINNET_PROGRAM_ID.OPENBOOK_MARKET,
-      });
-      if (poolKeys.id.toString() != raydiumPairAddr) {
-        await utils.sleep(100);
-        poolKeys = null;
-        continue;
-      }
-      poolKeys.marketBaseVault = marketInfo.baseVault;
-      poolKeys.marketQuoteVault = marketInfo.quoteVault;
-      poolKeys.marketBids = marketInfo.bids;
-      poolKeys.marketAsks = marketInfo.asks;
-      poolKeys.marketEventQueue = marketInfo.eventQueue;
-      break;
-    }
-
-    if (!poolKeys) {
-      return false;
-    }
-
-    poolKeysMap.set(base, poolKeys);
-    return true;
-  } catch (error) {
-    console.log(error);
-  }
   return false;
 };
 
-export const getCreateLookUpTableTransaction = async (
+export const createLookUpTableTransaction = async (
   payer: any,
   poolKeys: any
 ) => {
@@ -348,6 +366,7 @@ export const getBuyTransactionInsts = async (
     wallet.wallet.publicKey,
     false
   );
+
   const swapToTokenTransaction = await Liquidity.makeSwapInstructionSimple({
     connection: global.getMainnetConn(),
     makeTxVersion: 0,

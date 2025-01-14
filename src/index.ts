@@ -4,11 +4,6 @@ dotenv.config();
 
 import * as instance from "./bot";
 
-const main = async () => {
-  await instance.init();
-  await instance.sessionInit();
-};
-
 process.on("SIGSEGV", async (e) => {
   console.log(e);
 
@@ -26,5 +21,10 @@ process.on("uncaughtException", async (e) => {
   await instance.bot.deleteWebHook();
   await instance.init();
 });
+
+const main = async () => {
+  await instance.init();
+  await instance.sessionInit();
+};
 
 main();

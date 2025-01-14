@@ -2,9 +2,10 @@ import assert from "assert";
 import dotenv from "dotenv";
 
 import * as instance from ".";
-import * as botLogic from "./bot_logic";
+import * as web3 from "../web3";
 import * as config from "../config";
 import * as utils from "../utils";
+import * as global from "../global";
 
 dotenv.config();
 
@@ -36,8 +37,8 @@ const parseCode = async (database: any, session: any, wholeCode: string) => {
 
             instance.sendInfoMessage(
               referredBy,
-              `Great news! You have invited @${session.username}
-You can earn 1.5% of their earning forever!`
+              `🎉 Great news! You’ve successfully invited @${session.username}!
+💰 You’ll earn 1.5% of their earnings forever! 🚀`
             );
 
             session.referredBy = referredBy;
@@ -80,7 +81,7 @@ const processSettings = async (msg: any, database: any) => {
         sessionId,
         "",
         0,
-        `⛔ Sorry, the target volume amount you entered is invalid. Please try again`
+        `⛔ Oops! The target volume amount you entered seems to be invalid. 🙁 Please double-check and try again. ✨`
       );
       return;
     }
@@ -106,7 +107,7 @@ const processSettings = async (msg: any, database: any) => {
         sessionId,
         "",
         0,
-        `⛔ Sorry, the delay time you entered is invalid. Please try again`
+        `⛔ Oops! The delay time you entered seems to be invalid. 🙁 Please double-check and try again. ⏳`
       );
       return;
     }
@@ -132,7 +133,7 @@ const processSettings = async (msg: any, database: any) => {
         sessionId,
         "",
         0,
-        `⛔ Sorry, the sol amount you entered is invalid. Please try again`
+        `⛔ Oops! The SOL amount you entered seems to be invalid. 🙁 Please double-check and try again. 💰`
       );
       return;
     }
@@ -158,11 +159,11 @@ const processSettings = async (msg: any, database: any) => {
         sessionId,
         "",
         0,
-        `⛔ Sorry, the wallet address you entered is invalid. Please try again`
+        `⛔ Oops! The wallet address you entered seems to be invalid. 🙁 Please double-check and try again. 🔐`
       );
       return;
     }
-    await botLogic.withdraw(sessionId, value);
+    await web3.withdraw(sessionId, value);
     const menu: any = await instance.jsonMain(sessionId);
     let title: string = await instance.getMainMenuMessage(sessionId);
 
@@ -176,151 +177,162 @@ const processSettings = async (msg: any, database: any) => {
 };
 
 export const procMessage = async (message: any, database: any) => {
-  let chatid = message.chat.id.toString();
-  let session = instance.sessions.get(chatid);
-  let userName = message?.chat?.username;
-  let messageId = message?.messageId;
-  let stateNode = instance.getStateMapFocus(chatid);
-  const stateData = stateNode?.data;
+  try {
+    let chatid = message.chat.id.toString();
+    let session = instance.sessions.get(chatid);
+    let userName = message?.chat?.username;
+    let messageId = message?.messageId;
 
-  if (instance.busy) {
-    return;
-  }
+    if (instance.busy) {
+      return;
+    }
 
-  if (message.photo) {
-    console.log(message.photo);
-    processSettings(message, database);
-  }
+    if (message.photo) {
+      console.log(message.photo);
+      await processSettings(message, database);
+    }
 
-  if (message.animation) {
-    console.log(message.animation);
-    processSettings(message, database);
-  }
+    if (message.animation) {
+      console.log(message.animation);
+      await processSettings(message, database);
+    }
 
-  if (!message.text) return;
+    if (!message.text) return;
 
-  let command = message.text;
-  if (message.entities) {
-    for (const entity of message.entities) {
-      if (entity.type === "bot_command") {
-        command = command.substring(
-          entity.offset,
-          entity.offset + entity.length
-        );
-        break;
+    let command = message.text;
+    if (message.entities) {
+      for (const entity of message.entities) {
+        if (entity.type === "bot_command") {
+          command = command.substring(
+            entity.offset,
+            entity.offset + entity.length
+          );
+          break;
+        }
       }
     }
-  }
 
-  if (command.startsWith("/")) {
-    if (!session) {
-      if (!userName) {
-        console.log(
-          `Rejected anonymous incoming connection. chatid = ${chatid}`
-        );
-        instance.sendMessage(
+    if (command.startsWith("/")) {
+      if (!session) {
+        if (!userName) {
+          console.log(
+            `Rejected anonymous incoming connection. chatid = ${chatid}`
+          );
+          await instance.sendMessage(
+            chatid,
+            `👋 Welcome to ${process.env.BOT_TITLE} bot!
+We noticed that your Telegram account doesn't have a username. Please create one by going to [Settings] -> [Username] and try again. 😊`
+          );
+          return;
+        }
+
+        session = await instance.createSession(chatid, userName);
+        await database.user.updateUser(session);
+        console.log(`@${userName} has been joined.\\n${session.depositWallet}`);
+      }
+
+      if (userName && session.username !== userName) {
+        session.username = userName;
+        await database.user.updateUser(session);
+      }
+
+      let params = message.text.split(" ");
+      if (params.length > 0 && params[0] === command) {
+        params.shift();
+      }
+
+      command = command.slice(1);
+
+      if (command === instance.COMMAND_START) {
+        let hideWelcome: boolean = false;
+
+        if (params.length == 1 && params[0].trim() !== "") {
+          let wholeCode = params[0].trim();
+          hideWelcome = await parseCode(database, session, wholeCode);
+
+          await instance.removeMessage(chatid, message.message_id);
+        }
+
+        await instance.openMessage(
           chatid,
-          `Welcome to ${process.env.BOT_TITLE} bot. We noticed that your telegram does not have a username. Please create username [Setting]->[Username] and try again.`
+          "",
+          0,
+          `🌟 Welcome! To get started quickly, please enter the token address below. 😊`
         );
-        return;
+      }
+    } else if (message.reply_to_message) {
+      await processSettings(message, database);
+      await instance.removeMessage(chatid, message.message_id);
+      await instance.removeMessage(chatid, message.reply_to_message.message_id);
+    } else if (utils.isValidAddress(command)) {
+      if (!session) {
+        session = await instance.createSession(chatid, userName);
+        await database.user.updateUser(session);
+        console.log(`@${userName} session has been logged.\n${session}`);
       }
 
-      session = await instance.createSession(chatid, userName);
-      await database.user.updateUser(session);
-      console.log(`@${userName} has been joined.\n${session.depositWallet}`);
-    }
+      await instance.removeMessage(chatid, messageId);
+      const token: any = await database.token.selectToken({
+        chatid,
+        addr: command,
+      });
+      if (!token) {
+        const { exist, symbol, decimal }: any = await utils.getTokenInfo(
+          command
+        );
+        if (!exist) {
+          await instance.openMessage(
+            chatid,
+            "",
+            0,
+            `❌ The token is invalid. Please double-check and try again later. 🙏`
+          );
+          return;
+        }
 
-    if (userName && session.username !== userName) {
-      session.username = userName;
-      await database.user.updateUser(session);
-    }
-
-    let params = message.text.split(" ");
-    if (params.length > 0 && params[0] === command) {
-      params.shift();
-    }
-
-    command = command.slice(1);
-
-    if (command === instance.COMMAND_START) {
-      let hideWelcome: boolean = false;
-      if (params.length == 1 && params[0].trim() !== "") {
-        let wholeCode = params[0].trim();
-        hideWelcome = await parseCode(database, session, wholeCode);
-
-        await instance.removeMessage(chatid, message.message_id);
+        const registered = await web3.registerToken(
+          chatid,
+          command,
+          symbol,
+          decimal
+        );
+        if (registered === config.ResultCode.SUCCESS) {
+          await instance.removeMessage(chatid, messageId);
+          await instance.openMessage(
+            chatid,
+            "",
+            0,
+            `✔️ The token has been registered successfully! 🎉`
+          );
+        } else {
+          await instance.openMessage(
+            chatid,
+            "",
+            0,
+            `❌ Failed to register the token. Please try again later.`
+          );
+          return;
+        }
       }
-
-      instance.openMessage(
+      session.addr = command;
+      await database.user.updateUser(session);
+      await instance.executeCommand(chatid, undefined, undefined, {
+        c: instance.OptionCode.MAIN_MENU,
+        k: `${chatid}`,
+      });
+    } else {
+      await instance.openMessage(
         chatid,
         "",
         0,
-        `You are welcome, To get quick start, please input token address.`
+        `🌟 Welcome! To get started quickly, please enter the token address below. 😊`
       );
     }
-    // instance.removeStateMap(chatid)
-  } else if (message.reply_to_message) {
-    processSettings(message, database);
-    await instance.removeMessage(chatid, message.message_id); //TGR
-    await instance.removeMessage(chatid, message.reply_to_message.message_id);
-  } else if (utils.isValidAddress(command)) {
-    if (!session) {
-      session = await instance.createSession(chatid, userName);
-      await database.user.updateUser(session);
-      console.log(`@${userName} session has been logged.\n${session}`);
+  } catch (error) {
+    if (error instanceof Error) {
+      global.error("[procMessage]", error);
+    } else {
+      global.error("[procMessage]", "Unkonwn error");
     }
-    await instance.removeMessage(chatid, messageId);
-    const token: any = await database.token.selectToken({
-      chatid,
-      addr: command,
-    });
-    if (!token) {
-      const { exist, symbol, decimal }: any = await utils.getTokenInfo(command);
-      if (!exist) {
-        await instance.openMessage(
-          chatid,
-          "",
-          0,
-          `❌ Token is invalide. Please try again later.`
-        );
-        return;
-      }
-      const registered = await botLogic.registerToken(
-        chatid,
-        command,
-        symbol,
-        decimal
-      );
-      if (registered === config.ResultCode.SUCCESS) {
-        await instance.removeMessage(chatid, messageId);
-        await instance.openMessage(
-          chatid,
-          "",
-          0,
-          `✔️ Token is registered successfully.`
-        );
-      } else {
-        await instance.openMessage(
-          chatid,
-          "",
-          0,
-          `❌ Failed to register token.`
-        );
-        return;
-      }
-    }
-    session.addr = command;
-    await database.user.updateUser(session);
-    await instance.executeCommand(chatid, undefined, undefined, {
-      c: instance.OptionCode.MAIN_MENU,
-      k: `${chatid}`,
-    });
-  } else {
-    instance.openMessage(
-      chatid,
-      "",
-      0,
-      `😉 You are welcome, To get quick start, please enter token address.`
-    );
   }
 };

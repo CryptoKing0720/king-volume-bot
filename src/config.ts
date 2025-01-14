@@ -4,6 +4,9 @@ export const MAINNET_RPCS = [
   "https://mainnet.helius-rpc.com/?api-key=9660aff8-5e6d-4962-b7cb-2ab9ba32e375",
 ];
 
+export const DEXSCREENER_TOKEN_API =
+  "https://api.dexscreener.com/latest/dex/tokens/";
+
 export const JITO_TIP_ACCOUNTS = [
   "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5", // Jitotip 1
   "HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe", // Jitotip 2

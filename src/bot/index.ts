@@ -3,8 +3,8 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-import * as botLogic from "./bot_logic";
-import * as botPrivate from "./bot_private";
+import * as web3 from "../web3";
+import * as privateBot from "./bot_private";
 import * as database from "../db";
 import * as global from "../global";
 import * as utils from "../utils";
@@ -165,7 +165,6 @@ export const getMenuTitle = (sessionId: string, subTitle: string) => {
       : `@${session.username} group's configuration setup`;
 
   if (subTitle && subTitle !== "") {
-    //subTitle = subTitle.replace('%username%', `@${session.username}`)
     result += `\n${subTitle}`;
   }
 
@@ -176,7 +175,11 @@ export const pinMessage = (chatid: string, messageId: number) => {
   try {
     bot.pinChatMessage(chatid, messageId);
   } catch (error) {
-    console.error(error);
+    if (error instanceof Error) {
+      global.error("[pinMessage]", error);
+    } else {
+      global.error("[pinMessage]", "Unkonwn error");
+    }
   }
 };
 
@@ -194,10 +197,12 @@ export const init = async () => {
     myInfo = info;
   });
 
+  bot.setMyCommands([{ command: "start", description: "Start a main menu" }]);
+
   bot.on("message", async (message: any) => {
     const msgType = message?.chat?.type;
     if (msgType === "private") {
-      await botPrivate.procMessage(message, database);
+      await privateBot.procMessage(message, database);
     }
   });
 
@@ -241,7 +246,13 @@ export const removeMenu = async (chatId: string, messageType: number) => {
   if (msgId) {
     try {
       await bot.deleteMessage(chatId, msgId);
-    } catch (error) {}
+    } catch (error) {
+      if (error instanceof Error) {
+        global.error("[removeMenu]", error);
+      } else {
+        global.error("[removeMenu]", "Unkonwn error");
+      }
+    }
   }
 };
 
@@ -271,7 +282,11 @@ export const openMenu = async (
       setStateMapMessageId(chatId, messageType, msg.message_id);
       resolve({ messageId: msg.message_id, chatid: msg.chat.id });
     } catch (error) {
-      global.errorLog("openMenu", error);
+      if (error instanceof Error) {
+        global.error("[openMenu]", error);
+      } else {
+        global.error("[openMenu]", "Unkonwn error");
+      }
       resolve(null);
     }
   });
@@ -283,31 +298,34 @@ export const openMessage = async (
   messageType: number,
   menuTitle: string
 ) => {
-  return new Promise(async (resolve, reject) => {
+  try {
     await removeMenu(chatId, messageType);
 
     let msg: TelegramBot.Message;
 
-    try {
-      if (bannerId) {
-        msg = await bot.sendPhoto(chatId, bannerId, {
-          caption: menuTitle,
-          parse_mode: "HTML",
-        });
-      } else {
-        msg = await bot.sendMessage(chatId, menuTitle, {
-          parse_mode: "HTML",
-          disable_web_page_preview: true,
-        });
-      }
-
-      setStateMapMessageId(chatId, messageType, msg.message_id);
-      resolve({ messageId: msg.message_id, chatid: msg.chat.id });
-    } catch (error) {
-      global.errorLog("openMenu", error);
-      resolve(null);
+    if (bannerId) {
+      msg = await bot.sendPhoto(chatId, bannerId, {
+        caption: menuTitle,
+        parse_mode: "HTML",
+      });
+    } else {
+      msg = await bot.sendMessage(chatId, menuTitle, {
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      });
     }
-  });
+
+    setStateMapMessageId(chatId, messageType, msg.message_id);
+    return { messageId: msg.message_id, chatid: msg.chat.id };
+  } catch (error) {
+    if (error instanceof Error) {
+      global.error("[openMessage]", error);
+    } else {
+      global.error("[openMessage]", "Unkonwn error");
+    }
+
+    return null;
+  }
 };
 
 export const switchMenu = async (
@@ -332,7 +350,11 @@ export const switchMenu = async (
       parse_mode: "HTML",
     });
   } catch (error) {
-    global.errorLog("[switchMenuWithTitle]", error);
+    if (error instanceof Error) {
+      global.error("[switchMenu]", error);
+    } else {
+      global.error("[switchMenu]", "Unkonwn error");
+    }
   }
 };
 
@@ -350,29 +372,41 @@ export const replaceMenu = async (
     force_reply: true,
   };
 
-  return new Promise(async (resolve, reject) => {
-    try {
-      await bot.deleteMessage(chatId, messageId);
-    } catch (error) {
-      //global.errorLog('deleteMessage', error)
+  try {
+    // Attempt to delete the previous message
+    await bot.deleteMessage(chatId, messageId);
+  } catch (error) {
+    if (error instanceof Error) {
+      global.error("[replaceMenu]", error);
+    } else {
+      global.error("[replaceMenu]", "Unkonwn error");
+    }
+  }
+
+  // Remove the old menu
+  await removeMenu(chatId, messageType);
+
+  try {
+    // Send the new menu message
+    const msg: TelegramBot.Message = await bot.sendMessage(chatId, menuTitle, {
+      reply_markup: keyboard,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
+
+    // Update state with new message ID
+    setStateMapMessageId(chatId, messageType, msg.message_id);
+
+    return { messageId: msg.message_id, chatid: msg.chat.id };
+  } catch (error) {
+    if (error instanceof Error) {
+      global.error("[replaceMenu]", error);
+    } else {
+      global.error("[replaceMenu]", "Unkonwn error");
     }
 
-    await removeMenu(chatId, messageType);
-
-    try {
-      let msg: TelegramBot.Message = await bot.sendMessage(chatId, menuTitle, {
-        reply_markup: keyboard,
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      });
-
-      setStateMapMessageId(chatId, messageType, msg.message_id);
-      resolve({ messageId: msg.message_id, chatid: msg.chat.id });
-    } catch (error) {
-      global.errorLog("openMenu", error);
-      resolve(null);
-    }
-  });
+    return null;
+  }
 };
 
 export const sendMessage = async (
@@ -412,7 +446,7 @@ export const sendMessage = async (
     }
 
     console.log(error?.response?.body);
-    global.errorLog("sendMessage", error);
+    global.error("[sendMessage]", error);
     return null;
   }
 };
@@ -422,7 +456,7 @@ export const removeMessage = async (sessionId: string, messageId: number) => {
     try {
       await bot.deleteMessage(sessionId, messageId);
     } catch (error) {
-      //console.error(error)
+      global.error("[removeMessage]", error);
     }
   }
 };
@@ -442,7 +476,7 @@ export const sendReplyMessage = async (chatid: string, message: string) => {
       chatid: msg.chat ? msg.chat.id : null,
     };
   } catch (error) {
-    global.errorLog("sendReplyMessage", error);
+    global.error("[sendReplyMessage]", error);
     return null;
   }
 };
@@ -475,7 +509,7 @@ export const sendOptionMessage = async (
       chatid: msg.chat ? msg.chat.id : null,
     };
   } catch (error) {
-    global.errorLog("sendOptionMessage", error);
+    global.error("[sendOptionMessage]", error);
 
     return null;
   }
@@ -489,65 +523,80 @@ export const getMainMenuMessage = async (
     return "";
   }
 
-  const pairInfo: any = await utils.getPairInfo(session.addr);
-  const token: any = await database.token.selectToken({
-    chatid: sessionId,
-    addr: session.addr,
-  });
-  const user: any = await database.user.selectUser({ chatid: sessionId });
-  const depositWallet: any = utils.getWalletFromPrivateKey(user.depositWallet);
-  const walletBalance: number = await utils.getWalletSOLBalance(depositWallet);
-  const MESSAGE = `🚀 Welcome to ${process.env.BOT_TITLE} 🚀.
+  try {
+    const [pairInfo, token, user] = await Promise.all([
+      utils.getPairInfo(session.addr),
+      database.token.selectToken({ chatid: sessionId, addr: session.addr }),
+      database.user.selectUser({ chatid: sessionId }),
+    ]);
+
+    // Check if token and user are not null
+    if (!token || !user) {
+      return "An error occurred: Token or user data is missing.";
+    }
+
+    const depositWallet = utils.getWalletFromPrivateKey(user.depositWallet!);
+    const walletBalance = await utils.getWalletSOLBalance(depositWallet);
+
+    const generateSocialLinks = (socials: any) => {
+      return [
+        socials.telegram ? `<a href="${socials.telegram}">Telegram</a>` : "",
+        socials.website ? `<a href="${socials.website}">Website</a>` : "",
+        socials.twitter ? `<a href="${socials.twitter}">Twitter</a>` : "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
+    };
+
+    const socialLinks = pairInfo ? generateSocialLinks(pairInfo.socials) : "";
+
+    const MESSAGE = `👑👑👑 Welcome to ${process.env.BOT_TITLE} 👑👑👑
 
 📌 Address: <code>${token.addr}</code>
-🌐 <strong>Dex</strong>: Raydium
-🔗 <strong>Pair</strong>: ${pairInfo ? pairInfo.pair : token.symbol + " / SOL"}
-💎 <strong>Price</strong>: ${pairInfo ? pairInfo.price : "Unknown"}
-📈 <strong>TRXS</strong>:
- ├ 5M: ${pairInfo ? pairInfo.trx5m : "Unknown"} 
- ├ 1H: ${pairInfo ? pairInfo.trx1h : "Unknown"}
- ├ 6H: ${pairInfo ? pairInfo.trx6h : "Unknown"}
+🌐 <strong>Dex</strong>: ${pairInfo?.dex?.toUpperCase() || "Unknown"}
+🔗 <strong>Pair</strong>: ${pairInfo ? pairInfo.pair : `${token.symbol} / SOL`}
+💵 <strong>Price</strong>: ${pairInfo ? pairInfo.price : "Unknown"}
+📈 <strong>Transactions</strong>:
+ ├ 5M:   ${pairInfo ? pairInfo.trx5m : "Unknown"} 
+ ├ 1H:   ${pairInfo ? pairInfo.trx1h : "Unknown"}
+ ├ 6H:   ${pairInfo ? pairInfo.trx6h : "Unknown"}
  └ 24H: ${pairInfo ? pairInfo.trx24h : "Unknown"}
 📊 <strong>Volume</strong>:
- ├ 5M: ${pairInfo ? `$${pairInfo.volume5m}` : "Unknown"}
- ├ 1H: ${pairInfo ? `$${pairInfo.volume1h}` : "Unknown"}
- ├ 6H: ${pairInfo ? `$${pairInfo.volume6h}` : "Unknown"}
+ ├ 5M:   ${pairInfo ? `$${pairInfo.volume5m}` : "Unknown"}
+ ├ 1H:   ${pairInfo ? `$${pairInfo.volume1h}` : "Unknown"}
+ ├ 6H:   ${pairInfo ? `$${pairInfo.volume6h}` : "Unknown"}
  └ 24H: ${pairInfo ? `$${pairInfo.volume24h}` : "Unknown"}
-💰 <strong>Liquidity</strong>: ${pairInfo ? `$${pairInfo.lp}` : "Unknown"}
-💲 <strong>MarketCap</strong>: ${pairInfo ? `$${pairInfo.mc}` : "Unknown"}
-🌐 <strong>Socials</strong>: ${
-    pairInfo
-      ? (pairInfo.socials?.telegram &&
-          `<a href="${pairInfo.socials.telegram}">Telegram</a> | `) +
-        (pairInfo.socials?.website &&
-          `<a href="${pairInfo.socials.website}">Website</a> | `) +
-        (pairInfo.socials?.twitter &&
-          `<a href="${pairInfo.socials.twitter}">Twitter</a>`)
-      : ""
-  }
+🔹 <strong>Liquidity</strong>: ${pairInfo ? `$${pairInfo.lp}` : "Unknown"}
+📈 <strong>MarketCap</strong>: ${pairInfo ? `$${pairInfo.mc}` : "Unknown"}
+🌐 <strong>Socials</strong>: ${socialLinks}
 
-🎚️ Target Volume: $${token.target}M
+🎯 Target Volume: $${token.target}M
 ⏳ Delay Time: ${token.delay}s
-🕹 SOL Amount: ${token.solAmount}SOL
+💳 SOL Amount: ${token.solAmount} SOL
 
-📜 Bot made: ${utils.roundBigUnit(token.volume, 2)}, ${utils.roundBigUnit(
-    token.reqCount * 5,
-    2
-  )} Makers, ${utils.roundBigUnit(token.reqCount * 10, 2)} TRXs
-🕰 Bot worked: ${utils.roundDecimal(token.workingTime / (60 * 1000), 1)} min
-⛽ Bot Tax: 1SOL per $0.1M
-
-💪 Bot can make: $${utils.roundBigUnit(
-    walletBalance * 0.05,
-    3
-  )}M Volume, ${utils.roundDecimal(
-    Math.floor(walletBalance * 500),
-    2
-  )} Makers, ${utils.roundDecimal(Math.floor(walletBalance * 1000), 2)} TRXs
-💳 Your Deposit Wallet: ${utils.roundSolUnit(walletBalance, 2)}
+📜 Bot created: ${utils.roundBigUnit(token.volume!, 2)}, ${utils.roundBigUnit(
+      token.reqCount! * 5,
+      2
+    )} Makers, ${utils.roundBigUnit(token.reqCount! * 10, 2)} Trxs
+🕰 Bot operational: ${utils.roundDecimal(
+      token.workingTime! / (60 * 1000),
+      1
+    )} min
+🚀 Bot capacity: $${utils.roundBigUnit(
+      walletBalance * 0.05,
+      3
+    )}M Volume, ${utils.roundDecimal(
+      Math.floor(walletBalance * 500),
+      2
+    )} Makers, ${utils.roundDecimal(Math.floor(walletBalance * 1000), 2)} Trxs
+💼 Your Deposit Wallet: ${utils.roundSolUnit(walletBalance, 2)}
 <code>${depositWallet.publicKey}</code>`;
 
-  return MESSAGE;
+    return MESSAGE;
+  } catch (error) {
+    global.error("[getMainMenuMessage]", error);
+    return "An error occurred while generating the menu. Please try again later. 🙁"; // Generic error message
+  }
 };
 
 export const jsonMain = async (sessionId: string) => {
@@ -560,26 +609,23 @@ export const jsonMain = async (sessionId: string) => {
     chatid: sessionId,
     addr: session.addr,
   });
+
   const itemData = `${sessionId}`;
   const json = [
     [
       jsonButtonItem(
         itemData,
         OptionCode.TITLE,
-        `🎖️ ${process.env.BOT_TITLE} 🎖️`
+        `👑 ${process.env.BOT_TITLE} 👑`
       ),
     ],
     [
       jsonButtonItem(
         itemData,
         token.botId ? OptionCode.MAIN_STOP : OptionCode.MAIN_START,
-        token.botId ? "🔴 Stop" : "🚀 Start"
+        token.botId ? "🛑 Stop" : "🚀 Start"
       ),
     ],
-    // [
-    //     jsonButtonItem(itemData, OptionCode.MAIN_DISPERSE, "🔀 Disperse"),
-    //     jsonButtonItem(itemData, OptionCode.MAIN_COLLECT, "💰 Collect"),
-    // ],
     [
       jsonButtonItem(
         itemData,
@@ -737,28 +783,28 @@ export const executeCommand = async (
     } else if (cmd === OptionCode.MAIN_TARGET_VOLUME) {
       await sendReplyMessage(
         chatid,
-        `📨 Reply to this message with volume amount bot has to achieve. Ex: 1 is 1M`
+        `📨 Please reply to this message with the volume amount you'd like the bot to achieve. e.g. "1" represents 1M.`
       );
       stateData.menu_id = messageId;
       setStateMapFocus(chatid, StateCode.WAIT_SET_TARGET_VOLUME, stateData);
     } else if (cmd === OptionCode.MAIN_DELAY) {
       await sendReplyMessage(
         chatid,
-        `📨 Reply to this message with delay time on bot working. Ex: 10 is 10s`
+        `📨 Please reply to this message with the delay time for the bot to operate. e.g. "10" represents 10s`
       );
       stateData.menu_id = messageId;
       setStateMapFocus(chatid, StateCode.WAIT_SET_DELAY, stateData);
     } else if (cmd === OptionCode.MAIN_STEP_AMOUNT) {
       await sendReplyMessage(
         chatid,
-        `📨 Reply to this message with sol amount. Ex: 1 is 1SOL`
+        `📨 Please reply to this message with sol amount. e.g. "1" represents 1 SOL`
       );
       stateData.menu_id = messageId;
       setStateMapFocus(chatid, StateCode.WAIT_SET_STEP_AMOUNT, stateData);
     } else if (cmd === OptionCode.MAIN_WITHDRAW) {
       await sendReplyMessage(
         chatid,
-        `📨 Reply to this message with your wallet address to withdraw.`
+        `📨 Please reply to this message with your wallet address to withdraw.`
       );
       stateData.menu_id = messageId;
       setStateMapFocus(chatid, StateCode.WAIT_WALLET_ADRR, stateData);
@@ -766,15 +812,15 @@ export const executeCommand = async (
       await removeMessage(sessionId, messageId);
     } else if (cmd === OptionCode.MAIN_START) {
       bot.answerCallbackQuery(callbackQueryId, {
-        text: `⏱️ Initializing... Please wait a sec.`,
+        text: `⏱️ Setting things up for you... Just a moment, please. 😊`,
       });
-      await botLogic.start(chatid, session.addr);
+      await web3.start(chatid, session.addr);
       const menu: any = await jsonMain(sessionId);
       let title: string = await getMainMenuMessage(sessionId);
 
       switchMenu(chatid, messageId, title, menu.options);
     } else if (cmd === OptionCode.MAIN_STOP) {
-      await botLogic.stop(chatid, session.addr);
+      await web3.stop(chatid, session.addr);
       const menu: any = await jsonMain(sessionId);
       let title: string = await getMainMenuMessage(sessionId);
 

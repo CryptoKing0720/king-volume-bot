@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 
+import * as global from "../global";
+
 export const Wallet = mongoose.model(
   "Wallet",
   new mongoose.Schema({
@@ -11,40 +13,40 @@ export const Wallet = mongoose.model(
 );
 
 export const addWallet = async (params: any) => {
-  return new Promise(async (resolve, reject) => {
+  try {
     const item = new Wallet();
     item.timestamp = new Date().getTime();
-
     item.pubKey = params.pubKey;
     item.prvKey = params.prvKey;
     item.usedTokenIdx = [];
-
     await item.save();
-
-    resolve(item);
-  });
+    return item;
+  } catch (error) {
+    global.error("[addWallet]", error);
+    throw error;
+  }
 };
 
 export const selectWallets = async (params: any = {}, limit: number = 0) => {
-  return new Promise(async (resolve, reject) => {
+  try {
+    const query = Wallet.find(params);
     if (limit) {
-      Wallet.find(params)
-        .limit(limit)
-        .then(async (dcas) => {
-          resolve(dcas);
-        });
-    } else {
-      Wallet.find(params).then(async (dcas) => {
-        resolve(dcas);
-      });
+      query.limit(limit);
     }
-  });
+    const wallets = await query.exec();
+    return wallets;
+  } catch (error) {
+    global.error("[selectWallets]", error);
+    throw error;
+  }
 };
 
 export const deleteWallets = async (params: any = {}) => {
-  return new Promise(async (resolve, reject) => {
-    Wallet.deleteMany(params).then(async (dcas) => {
-      resolve(dcas);
-    });
-  });
+  try {
+    const result = await Wallet.deleteMany(params);
+    return result;
+  } catch (error) {
+    global.error("[deleteWallets]", error);
+    throw error;
+  }
 };

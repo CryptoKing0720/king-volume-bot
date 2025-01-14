@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 
+import * as global from "../global";
+
 export const Token = mongoose.model(
   "Token",
   new mongoose.Schema({
@@ -20,8 +22,8 @@ export const Token = mongoose.model(
   })
 );
 
-export const registToken = (params: any) => {
-  return new Promise(async (resolve, reject) => {
+export const registerToken = async (params: any) => {
+  try {
     const item = new Token();
     item.timestamp = new Date().getTime();
     item.chatid = params.chatid;
@@ -38,46 +40,53 @@ export const registToken = (params: any) => {
     item.workingTime = 0;
     item.reqCount = 0;
     await item.save();
-    resolve(item);
-  });
+    return item;
+  } catch (error) {
+    global.error("[registerToken]", error);
+    throw error;
+  }
 };
 
-export const removeToken = (params: any) => {
-  return new Promise((resolve, reject) => {
-    Token.deleteOne(params).then(() => {
-      resolve(true);
-    });
-  });
+export const removeToken = async (params: any) => {
+  try {
+    await Token.deleteOne(params);
+    return true;
+  } catch (error) {
+    global.error("[removeToken]", error);
+    throw error;
+  }
 };
 
 export const selectToken = async (params: any) => {
-  return new Promise(async (resolve, reject) => {
-    Token.findOne(params).then(async (user) => {
-      resolve(user);
-    });
-  });
+  try {
+    const token = await Token.findOne(params);
+    return token;
+  } catch (error) {
+    global.error("[selectToken]", error);
+    throw error;
+  }
 };
 
 export const selectTokens = async (params: any = {}, limit: number = 0) => {
-  return new Promise(async (resolve, reject) => {
-    if (limit) {
-      Token.find(params)
-        .limit(limit)
-        .then(async (dcas) => {
-          resolve(dcas);
-        });
-    } else {
-      Token.find(params).then(async (dcas) => {
-        resolve(dcas);
-      });
+  try {
+    const query = Token.find(params);
+    if (limit > 0) {
+      query.limit(limit);
     }
-  });
+    const tokens = await query;
+    return tokens;
+  } catch (error) {
+    global.error("[selectTokens]", error);
+    throw error;
+  }
 };
 
 export const updateToken = async (params: any) => {
-  return new Promise(async (resolve, reject) => {
-    Token.updateOne(params).then(async (user) => {
-      resolve(user);
-    });
-  });
+  try {
+    const result = await Token.updateOne(params);
+    return result;
+  } catch (error) {
+    global.error("[updateToken]", error);
+    throw error;
+  }
 };
